@@ -3,7 +3,7 @@ import { neon } from "@neondatabase/serverless";
 
 const app = new Hono();
 
-app.get("/api/ping-db", async (c) => {
+app.get("/ping-db", async (c) => {
   const databaseUrl = c.env.DATABASE_URL as string | undefined;
   if (!databaseUrl) {
     return c.json({ error: "DATABASE_URL not configured" }, 500);

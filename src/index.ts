@@ -14,6 +14,7 @@ app.get("/", (c) => {
 });
 
 app.route("/api", pingDb);
+app.use("/api/me/*", auth);
 app.route("/api/me", me);
 
 app.use("/api/students/*", auth);

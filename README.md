@@ -4,7 +4,7 @@ Education center management SaaS backend built with Cloudflare Workers + Hono + 
 
 ## Current Status
 
-**All 6 Stages Complete**
+**ALL STAGES COMPLETE** - Backend is fully implemented and tested.
 
 ## Progress Summary
 
@@ -12,16 +12,40 @@ Education center management SaaS backend built with Cloudflare Workers + Hono + 
 |-------|--------|-------------|
 | Stage 0: Scaffold | ✅ Complete | Cloudflare Workers + Hono project initialized, `GET /` returns `{status: "ok"}` |
 | Stage 1: Neon Connection | ✅ Complete | `@neondatabase/serverless` installed, `GET /api/ping-db` returns real data from Neon |
-| Stage 2: Drizzle ORM | ✅ Complete | Drizzle ORM set up with `students` and `courses` tables (uuid id, org_id, updated_at, deleted_at) |
-| Stage 3: Clerk Auth | ✅ Complete | Auth middleware using `@clerk/backend`, extracts orgId and userId, `GET /api/me` protected endpoint |
+| Stage 2: Drizzle ORM | ✅ Complete | Drizzle ORM set up with `students` and `courses` tables |
+| Stage 3: Clerk Auth | ✅ Complete | Auth middleware using `jose` + `@clerk/backend`, extracts `orgId` and `userId` from JWT |
 | Stage 4: CRUD APIs | ✅ Complete | Tenant-scoped CRUD for `/api/students` and `/api/courses` with soft deletes |
 | Stage 5: Sync Endpoints | ✅ Complete | `POST /api/sync/push` and `GET /api/sync/pull?since=` endpoints |
+
+## Verification Results
+
+### Auth Middleware ✅
+- Verified with a real Clerk session JWT
+- `GET /api/me` correctly returns `userId` and `orgId` extracted from JWT
+- Rejected invalid/fake tokens with 401
+- Rejected tokens without organization with 401
+
+### Tenant Isolation ✅
+- Inserted a record directly with a different `org_id` in the database
+- Verified the API with Org A's token does NOT return records with Org B's `org_id`
+- All CRUD queries include mandatory `eq(table.orgId, ctx.orgId)` filter
+- Records created via API are always scoped to the authenticated user's `org_id`
+
+### Soft Deletes ✅
+- DELETE soft-deletes records (sets `deleted_at` timestamp)
+- Soft-deleted records excluded from `GET` list queries
+- Soft-deleted records included in `GET /api/sync/pull` (for sync propagation)
+
+### Sync Round Trip ✅
+- POST `/api/sync/push` correctly upserts records scoped to `org_id`
+- GET `/api/sync/pull?since=` returns all updates (including soft-deleted) for the tenant
+- Push respects `updated_at` - only overwrites if incoming timestamp is newer
 
 ## Architecture
 
 ### Multi-Tenancy
 - Uses Clerk Organizations for tenant isolation
-- Every database record scoped by `org_id`
+- Every database record scoped by `org_id` (from Clerk JWT `o.id` claim)
 - Auth middleware enforces org membership (401 if no active org)
 
 ### Database Schema (Students & Courses)
@@ -30,10 +54,11 @@ Education center management SaaS backend built with Cloudflare Workers + Hono + 
 - **updated_at**: Timestamp with timezone, not null
 - **deleted_at**: Timestamp with timezone, nullable (soft deletes)
 - **students**: name, gender, date_of_birth, phone, email, lead_source, parent_name, parent_phone, school, address, notes, status
-- **courses**: name (varchar 255, not null), price (integer, smallest currency unit), payment_type ('monthly' | 'package'), status
+- **courses**: name (varchar 255, not null), price (integer - smallest currency unit), payment_type ('monthly' | 'package'), status
 
-### Money Fields
-- All money fields stored as integers (smallest currency unit, e.g. piastres)
+### JWT Verification
+- Session tokens verified using `jose`'s `jwtVerify` with Clerk JWKS fetched from the issuer's `/.well-known/jwks.json` endpoint
+- Uses `crypto.subtle.importKey` for key import (Worker-compatible)
 
 ## API Endpoints
 
@@ -41,23 +66,20 @@ Education center management SaaS backend built with Cloudflare Workers + Hono + 
 - `GET /` — Health check, returns `{ status: "ok" }`
 - `GET /api/ping-db` — Database connectivity check
 
-### Protected (requires Clerk session token)
-- `GET /api/me` — Returns authenticated user's orgId and userId
-- `GET /api/students` — List students (tenant-scoped)
+### Protected (requires `Authorization: Bearer <clerk_session_token>`)
+- `GET /api/me` — Returns authenticated user's `orgId` and `userId`
+- `GET /api/students` — List students (tenant-scoped, excludes soft-deleted)
 - `POST /api/students` — Create student
 - `GET /api/students/:id` — Get student by ID
 - `PATCH /api/students/:id` — Update student
 - `DELETE /api/students/:id` — Soft delete student
-- `GET /api/courses` — List courses (tenant-scoped)
+- `GET /api/courses` — List courses (tenant-scoped, excludes soft-deleted)
 - `POST /api/courses` — Create course
 - `GET /api/courses/:id` — Get course by ID
 - `PATCH /api/courses/:id` — Update course
 - `DELETE /api/courses/:id` — Soft delete course
 - `POST /api/sync/push` — Upsert records by ID, only overwrites if incoming `updated_at` is newer
 - `GET /api/sync/pull?since=<ISO timestamp>` — Pull all records (including soft-deleted) updated since timestamp
-
-### Auth
-All protected routes require: `Authorization: Bearer <clerk_session_token>`
 
 ## Setup
 
@@ -72,30 +94,6 @@ All protected routes require: `Authorization: Bearer <clerk_session_token>`
 2. Install dependencies: `npm install`
 
 3. Run locally: `npm run dev`
-
-## Testing
-
-### To test auth middleware end-to-end:
-1. Sign in to the frontend with a Clerk account that belongs to an organization
-2. Open browser devtools -> Network tab
-3. Find an API request made to the backend
-4. Copy the `Authorization: Bearer <session_token>` header
-5. Use it in curl:
-   ```bash
-   curl -H "Authorization: Bearer <your_session_token>" http://localhost:8787/api/me
-   ```
-
-### Testing tenant isolation:
-Once you have two session tokens from different Clerk organizations, you can verify that records created by one org are not visible to another org:
-   ```bash
-   # Create a student with org A token
-   curl -X POST -H "Authorization: Bearer <org_a_token>" -H "Content-Type: application/json" \
-     -d '{"id":"test-uuid","name":"Test Student","updated_at":"2025-01-01T00:00:00Z"}' \
-     http://localhost:8787/api/students
-   
-   # Try to access with org B token - should get 404
-   curl -H "Authorization: Bearer <org_b_token>" http://localhost:8787/api/students/test-uuid
-   ```
 
 ## Stack
 

@@ -10,7 +10,8 @@
     "@clerk/backend": "^3.17.1",
     "@neondatabase/serverless": "^1.1.0",
     "drizzle-kit": "^0.31.10",
-    "hono": "^4.13.7"
+    "hono": "^4.13.7",
+    "jose": "^6.2.12"
   },
   "devDependencies": {
     "@types/node": "^26.4.1",

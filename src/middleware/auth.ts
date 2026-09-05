@@ -1,9 +1,17 @@
 import { Context, MiddlewareHandler } from "hono";
-import { createClerkClient } from "@clerk/backend";
+import { jwtVerify } from "jose";
 
 export interface AuthContext {
   userId: string;
   orgId: string;
+}
+
+const jwksCache: { keys: any[] } | null = null;
+
+async function getClerkJwks(issuer: string) {
+  const res = await fetch(`${issuer}/.well-known/jwks.json`);
+  const jwks = await res.json();
+  return jwks;
 }
 
 export function createAuthMiddleware() {
@@ -19,26 +27,46 @@ export function createAuthMiddleware() {
     }
 
     try {
-      const clerkClient = createClerkClient({ secretKey });
+      // Decode header to get issuer (unverified, just for JWKS discovery)
+      const parts = token.split(".");
+      const header = JSON.parse(
+        Buffer.from(parts[0], "base64").toString()
+      );
 
-      const requestState = await clerkClient.authenticateRequest(c.req.raw, {
-        acceptsToken: "session_token",
-      });
+      // Decode payload to get issuer (unverified, just for JWKS discovery)
+      const payload = JSON.parse(
+        Buffer.from(parts[1], "base64").toString()
+      );
 
-      const auth = requestState.toAuth();
+      const issuer = payload.iss;
+      const jwks = await getClerkJwks(issuer);
+      const jwk = jwks.keys.find((k: any) => k.kid === header.kid);
 
-      if (!auth.isAuthenticated || !auth.userId) {
-        return c.json({ error: "Invalid session token" }, 401);
+      if (!jwk) {
+        throw new Error("JWK not found");
       }
 
-      if (!auth.orgId) {
+      const key = await globalThis.crypto.subtle.importKey(
+        "jwk",
+        jwk,
+        { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
+        false,
+        ["verify"]
+      );
+
+      const { payload: verifiedPayload } = await jwtVerify(token, key);
+
+      const userId = verifiedPayload.sub;
+      const orgId = (verifiedPayload.o as any)?.id;
+
+      if (!userId || !orgId) {
         return c.json({ error: "No active organization" }, 401);
       }
 
-      c.set("userId", auth.userId);
-      c.set("orgId", auth.orgId);
+      c.set("userId", userId);
+      c.set("orgId", orgId);
       await next();
-    } catch (err) {
+    } catch (err: any) {
       return c.json({ error: "Invalid session token" }, 401);
     }
   }) as MiddlewareHandler;

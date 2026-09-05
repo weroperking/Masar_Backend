@@ -1,8 +1,34 @@
 import { Hono } from "hono";
 import { createDb, schema } from "../db";
-import { eq, and, gt } from "drizzle-orm";
+import { eq, and, gt, isNull } from "drizzle-orm";
+import { allTables, type TableName } from "../db/schema";
 
 const app = new Hono();
+
+const syncableTables: TableName[] = [
+  "students",
+  "courses",
+  "groups",
+  "attendanceSessions",
+  "attendanceRecords",
+  "assessments",
+  "assessmentGrades",
+  "sessionPayments",
+  "ledgerEntries",
+  "bookingRequests",
+  "products",
+  "courseProducts",
+  "productSales",
+  "events",
+  "users",
+  "messageTemplates",
+  "settings",
+  "qrCards",
+  "monthlySubscriptions",
+  "payments",
+];
+
+const tableToColumnName: Record<string, string> = {};
 
 app.post("/push", async (c) => {
   const db = createDb(c.env.DATABASE_URL as string);
@@ -12,12 +38,11 @@ app.post("/push", async (c) => {
   const results: { table: string; records: { id: string; status: string }[] }[] = [];
 
   for (const group of body) {
-    const { table, records } = group;
-    const tableSchema = table === "students" ? schema.students :
-                        table === "courses" ? schema.courses : null;
+    const { table: tableName, records } = group;
+    const tableObj = allTables[tableName as TableName] as any;
 
-    if (!tableSchema) {
-      results.push({ table, records: records.map(r => ({ id: r.id, status: "error: unknown table" })) });
+    if (!tableObj) {
+      results.push({ table: tableName, records: records.map(r => ({ id: r.id, status: "error: unknown table" })) });
       continue;
     }
 
@@ -28,8 +53,8 @@ app.post("/push", async (c) => {
 
       const existing = await db
         .select()
-        .from(tableSchema)
-        .where(and(eq(tableSchema.id, id), eq(tableSchema.orgId, orgId)));
+        .from(tableObj)
+        .where(and(eq(tableObj.id, id), eq(tableObj.orgId, orgId)));
 
       if (existing.length > 0) {
         const existingUpdatedAt = new Date(existing[0].updatedAt).getTime();
@@ -37,15 +62,15 @@ app.post("/push", async (c) => {
 
         if (incomingUpdatedAt > existingUpdatedAt) {
           await db
-            .update(tableSchema)
-            .set({ ...data, updatedAt: updated_at })
-            .where(and(eq(tableSchema.id, id), eq(tableSchema.orgId, orgId)));
+            .update(tableObj)
+            .set({ ...data, updatedAt: updated_at, deletedAt: null })
+            .where(and(eq(tableObj.id, id), eq(tableObj.orgId, orgId)));
           recordResults.push({ id, status: "updated" });
         } else {
           recordResults.push({ id, status: "skipped" });
         }
       } else {
-        await db.insert(tableSchema).values({
+        await db.insert(tableObj).values({
           ...data,
           id,
           orgId,
@@ -56,7 +81,7 @@ app.post("/push", async (c) => {
       }
     }
 
-    results.push({ table, records: recordResults });
+    results.push({ table: tableName, records: recordResults });
   }
 
   return c.json({ results });
@@ -72,22 +97,22 @@ app.get("/pull", async (c) => {
   }
 
   const sinceDate = new Date(since);
+  const result: Record<string, any[]> = {};
 
-  const [studentsResult, coursesResult] = await Promise.all([
-    db
-      .select()
-      .from(schema.students)
-      .where(and(eq(schema.students.orgId, orgId), gt(schema.students.updatedAt, sinceDate.toISOString()))),
-    db
-      .select()
-      .from(schema.courses)
-      .where(and(eq(schema.courses.orgId, orgId), gt(schema.courses.updatedAt, sinceDate.toISOString()))),
-  ]);
+  await Promise.all(
+    syncableTables.map(async (tableName) => {
+      const tableObj = allTables[tableName] as any;
 
-  return c.json({
-    students: studentsResult,
-    courses: coursesResult,
-  });
+      const records = await db
+        .select()
+        .from(tableObj)
+        .where(and(eq(tableObj.orgId, orgId), gt(tableObj.updatedAt, sinceDate.toISOString())));
+
+      result[tableName] = records;
+    })
+  );
+
+  return c.json(result);
 });
 
 export default app;

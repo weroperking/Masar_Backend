@@ -1,0 +1,4 @@
+# Neon HTTP-compatible connection string
+# Get this from your Neon dashboard -> Connection Details -> Connection string
+DATABASE_URL=postgresql://neondb_owner:npg_1TlpDMqcUzF7@ep-summer-bird-aeplxmjf-pooler.c-2.us-east-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require
+

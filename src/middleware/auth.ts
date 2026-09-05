@@ -1,5 +1,5 @@
 import { Context, MiddlewareHandler } from "hono";
-import { createClerkAuth, extractToken } from "../lib/clerk";
+import { createClerkClient } from "@clerk/backend";
 
 export interface AuthContext {
   userId: string;
@@ -7,29 +7,36 @@ export interface AuthContext {
 }
 
 export function createAuthMiddleware() {
-  const verifyToken = createClerkAuth({ CLERK_SECRET_KEY: "" });
-
   return (async (c: Context, next: () => Promise<void>) => {
     const secretKey = c.env.CLERK_SECRET_KEY as string | undefined;
     if (!secretKey) {
       return c.json({ error: "CLERK_SECRET_KEY not configured" }, 500);
     }
 
-    const token = extractToken(c.req.header("Authorization"));
+    const token = c.req.header("Authorization")?.replace(/^Bearer /, "");
     if (!token) {
       return c.json({ error: "Missing Authorization header" }, 401);
     }
 
     try {
-      const verify = createClerkAuth({ CLERK_SECRET_KEY: secretKey });
-      const { userId, orgId } = await verify(token);
+      const clerkClient = createClerkClient({ secretKey });
 
-      if (!orgId) {
+      const requestState = await clerkClient.authenticateRequest(c.req.raw, {
+        acceptsToken: "session_token",
+      });
+
+      const auth = requestState.toAuth();
+
+      if (!auth.isAuthenticated || !auth.userId) {
+        return c.json({ error: "Invalid session token" }, 401);
+      }
+
+      if (!auth.orgId) {
         return c.json({ error: "No active organization" }, 401);
       }
 
-      c.set("userId", userId);
-      c.set("orgId", orgId);
+      c.set("userId", auth.userId);
+      c.set("orgId", auth.orgId);
       await next();
     } catch (err) {
       return c.json({ error: "Invalid session token" }, 401);

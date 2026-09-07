@@ -28,6 +28,7 @@ export function createCrudRouter(
     const body = await c.req.json<NewRecord>();
     const record = {
       ...body,
+      id: body.id || globalThis.crypto.randomUUID(),
       orgId,
       updatedAt: new Date().toISOString(),
       createdAt: new Date().toISOString(),

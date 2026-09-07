@@ -41,6 +41,7 @@ app.use("/api/message-templates/*", auth);
 app.use("/api/settings/*", auth);
 app.use("/api/qr-cards/*", auth);
 app.use("/api/monthly-subscriptions/*", auth);
+app.use("/api/enrollments/*", auth);
 
 app.route("/api/students", students);
 app.route("/api/courses", courses);
@@ -65,5 +66,6 @@ app.route("/api/message-templates", createCrudRouter("messageTemplates", "messag
 app.route("/api/settings", createCrudRouter("settings", "setting", schema.settings));
 app.route("/api/qr-cards", createCrudRouter("qrCards", "qrCard", schema.qrCards));
 app.route("/api/monthly-subscriptions", createCrudRouter("monthlySubscriptions", "monthlySubscription", schema.monthlySubscriptions));
+app.route("/api/enrollments", createCrudRouter("enrollments", "enrollment", schema.enrollments));
 
 export default app;

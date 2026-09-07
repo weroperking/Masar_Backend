@@ -26,6 +26,7 @@ const tenantTables: Record<string, any> = {
   settings: schema.settings,
   qrCards: schema.qrCards,
   monthlySubscriptions: schema.monthlySubscriptions,
+  enrollments: schema.enrollments,
 };
 
 app.post("/push", async (c) => {

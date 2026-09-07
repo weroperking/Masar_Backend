@@ -369,6 +369,22 @@ export const monthlySubscriptions = pgTable("monthly_subscriptions", {
   orgIdIdx: index("monthly_subscriptions_org_id_idx").on(table.orgId),
 }));
 
+export const enrollments = pgTable("enrollments", {
+  id: uuid("id").primaryKey(),
+  orgId: text("org_id").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull(),
+  deletedAt: timestamp("deleted_at", { withTimezone: true, mode: "string" }),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }),
+
+  studentId: text("student_id").notNull(),
+  groupId: text("group_id").notNull(),
+  courseId: text("course_id").notNull(),
+  enrolledAt: timestamp("enrolled_at", { withTimezone: true, mode: "string" }).notNull(),
+  status: varchar("status", { length: 50 }).notNull().default("active"),
+}, (table) => ({
+  orgIdIdx: index("enrollments_org_id_idx").on(table.orgId),
+}));
+
 export type Student = typeof students.$inferSelect;
 export type NewStudent = typeof students.$inferInsert;
 export type Course = typeof courses.$inferSelect;
@@ -411,3 +427,5 @@ export type QrCard = typeof qrCards.$inferSelect;
 export type NewQrCard = typeof qrCards.$inferInsert;
 export type MonthlySubscription = typeof monthlySubscriptions.$inferSelect;
 export type NewMonthlySubscription = typeof monthlySubscriptions.$inferInsert;
+export type Enrollment = typeof enrollments.$inferSelect;
+export type NewEnrollment = typeof enrollments.$inferInsert;

@@ -8,6 +8,13 @@
       "when": 1788653214798,
       "tag": "0000_loose_famine",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1788792707906,
+      "tag": "0001_glamorous_tomorrow_man",
+      "breakpoints": true
     }
   ]
 }

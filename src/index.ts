@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { cors } from "hono/cors";
 import pingDb from "./routes/ping-db";
 import me from "./routes/me";
 import students from "./routes/students";
@@ -14,6 +15,8 @@ const auth = createAuthMiddleware();
 app.get("/", (c) => {
   return c.json({ status: "ok" });
 });
+
+app.use("/api/*", cors({ origin: "*" })); // TODO: restrict to fixed production frontend origin before going live to real users
 
 app.route("/api", pingDb);
 app.use("/api/me/*", auth);

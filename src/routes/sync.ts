@@ -48,7 +48,9 @@ app.post("/push", async (c) => {
     const recordResults: { id: string; status: string }[] = [];
 
     for (const record of records) {
-      const { id, updated_at, ...data } = record;
+      const { id, updated_at, deleted_at, ...data } = record;
+      const updatedAtStr = typeof updated_at === "number" ? new Date(updated_at).toISOString() : updated_at;
+      const deletedAtStr = deleted_at ? (typeof deleted_at === "number" ? new Date(deleted_at).toISOString() : deleted_at) : null;
 
       const existing = await db
         .select()
@@ -62,7 +64,7 @@ app.post("/push", async (c) => {
         if (incomingUpdatedAt > existingUpdatedAt) {
           await db
             .update(tableSchema)
-            .set({ ...data, updatedAt: updated_at })
+            .set({ ...data, updatedAt: updatedAtStr })
             .where(and(eq(tableSchema.id, id), eq(tableSchema.orgId, orgId)));
           recordResults.push({ id, status: "updated" });
         } else {
@@ -73,9 +75,9 @@ app.post("/push", async (c) => {
           ...data,
           id,
           orgId,
-          updatedAt: updated_at,
-          deletedAt: null,
-          createdAt: updated_at,
+          updatedAt: updatedAtStr,
+          deletedAt: deletedAtStr,
+          createdAt: updatedAtStr,
         });
         recordResults.push({ id, status: "created" });
       }

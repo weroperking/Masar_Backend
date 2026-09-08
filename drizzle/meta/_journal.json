@@ -15,6 +15,13 @@
       "when": 1788792707906,
       "tag": "0001_glamorous_tomorrow_man",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1788878648075,
+      "tag": "0002_dapper_jack_flag",
+      "breakpoints": true
     }
   ]
 }

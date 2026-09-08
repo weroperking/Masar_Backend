@@ -56,6 +56,7 @@ export const groups = pgTable("groups", {
   sessionCount: integer("session_count"),
   maxStudents: integer("max_students"),
   notes: text("notes"),
+  room: text("room"),
   status: varchar("status", { length: 50 }).default("scheduled"),
 }, (table) => ({
   orgIdIdx: index("groups_org_id_idx").on(table.orgId),

@@ -7,17 +7,19 @@
 	"name": "masar-api",
 	"main": "src/index.ts",
 	"compatibility_date": "2026-09-03",
-
 	"observability": {
 		"enabled": true
 	},
 	"upload_source_maps": true,
-
 	/**
 	 * KV Namespaces
 	 */
 	"kv_namespaces": [
-		{ "binding": "SUBSCRIPTIONS_KV", "id": "sub_kv_production", "preview_id": "sub_kv_preview" }
+		{
+			"binding": "SUBSCRIPTIONS_KV",
+			"id": "69f3d34dead049f08476f644a63c58e0",
+			"preview_id": "sub_kv_preview"
+		}
 	],
 	/**
 	 * Smart Placement

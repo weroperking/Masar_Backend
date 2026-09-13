@@ -5,7 +5,7 @@ import { cors } from "hono/cors";
 
 const app = new Hono();
 
-app.use("/*", cors({ origin: "*" }));
+app.use("/*", cors({ origin: ["https://masar.top", "https://app.masar.top"] }));
 
 const rateLimitStore = new Map<string, number[]>();
 const RATE_LIMIT_MAX = 30;

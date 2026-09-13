@@ -23,6 +23,7 @@ app.post("/", async (c) => {
   const body = await c.req.json<NewStudent>();
 
   const student = {
+    id: body.id || globalThis.crypto.randomUUID(),
     ...body,
     orgId,
     updatedAt: new Date().toISOString(),
@@ -87,4 +88,34 @@ app.delete("/:id", async (c) => {
   return c.json({ success: true });
 });
 
+app.post("/:id/lookup-token", async (c) => {
+  const db = createDb(c.env.DATABASE_URL as string);
+  const orgId = c.get("orgId");
+  const id = c.req.param("id");
+
+  const existing = await db
+    .select()
+    .from(schema.students)
+    .where(and(eq(schema.students.id, id), eq(schema.students.orgId, orgId)))
+    .limit(1);
+
+  if (existing.length === 0) {
+    return c.json({ error: "Student not found" }, 404);
+  }
+
+  const token = globalThis.crypto.randomUUID();
+  const now = new Date().toISOString();
+
+  const result = await db
+    .update(schema.students)
+    .set({ publicLookupToken: token, updatedAt: now })
+    .where(and(eq(schema.students.id, id), eq(schema.students.orgId, orgId)))
+    .returning();
+
+  const url = `https://masar.app/s/${token}`;
+
+  return c.json({ token: result[0].publicLookupToken, url });
+});
+
 export default app;
+

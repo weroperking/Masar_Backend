@@ -19,8 +19,10 @@ export const students = pgTable("students", {
   address: text("address"),
   notes: text("notes"),
   status: varchar("status", { length: 50 }).default("active"),
+  publicLookupToken: text("public_lookup_token"),
 }, (table) => ({
   orgIdIdx: index("students_org_id_idx").on(table.orgId),
+  publicLookupTokenIdx: index("students_public_lookup_token_idx").on(table.publicLookupToken),
 }));
 
 export const courses = pgTable("courses", {

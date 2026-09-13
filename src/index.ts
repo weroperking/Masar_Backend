@@ -5,6 +5,7 @@ import me from "./routes/me";
 import students from "./routes/students";
 import courses from "./routes/courses";
 import sync from "./routes/sync";
+import publicLookup from "./routes/public-lookup";
 import { createAuthMiddleware } from "./middleware/auth";
 import { createCrudRouter } from "./lib/crud";
 import { createDb, schema } from "./db";
@@ -16,8 +17,10 @@ app.get("/", (c) => {
   return c.json({ status: "ok" });
 });
 
-app.use("/api/*", cors({ origin: "*" })); // TODO: restrict to fixed production frontend origin before going live to real users
+app.use("/api/*", cors({ origin: "*" }));
+app.use("/public/*", cors({ origin: "*" }));
 
+app.route("/public", publicLookup);
 app.route("/api", pingDb);
 app.use("/api/me/*", auth);
 app.route("/api/me", me);

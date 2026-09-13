@@ -6,12 +6,18 @@ import students from "./routes/students";
 import courses from "./routes/courses";
 import sync from "./routes/sync";
 import publicLookup from "./routes/public-lookup";
+import webhooks from "./routes/webhooks";
+import billing from "./routes/billing";
 import { createAuthMiddleware } from "./middleware/auth";
+import { createRequireActiveSubscription, createRequireFeature } from "./middleware/subscription";
 import { createCrudRouter } from "./lib/crud";
 import { createDb, schema } from "./db";
 
 const app = new Hono<{ Bindings: CloudflareBindings }>();
 const auth = createAuthMiddleware();
+const requireActiveSubscription = createRequireActiveSubscription();
+const requireInventorySalesFeature = createRequireFeature("inventory_sales");
+const requireCombinedPackagesFeature = createRequireFeature("combined_packages");
 
 app.get("/", (c) => {
   return c.json({ status: "ok" });
@@ -22,38 +28,50 @@ app.use("/public/*", cors({ origin: "*" }));
 
 app.route("/public", publicLookup);
 app.route("/api", pingDb);
+
+// Webhooks — no auth, raw Clerk-signed payload
+app.route("/webhooks", webhooks);
+
+// /api/me — auth only, NO subscription gate (includes /subscription-status)
 app.use("/api/me/*", auth);
 app.route("/api/me", me);
 
-app.use("/api/students/*", auth);
-app.use("/api/courses/*", auth);
-app.use("/api/sync/*", auth);
-app.use("/api/groups/*", auth);
-app.use("/api/attendance-sessions/*", auth);
-app.use("/api/attendance-records/*", auth);
-app.use("/api/assessments/*", auth);
-app.use("/api/assessment-grades/*", auth);
-app.use("/api/products/*", auth);
-app.use("/api/course-products/*", auth);
-app.use("/api/session-payments/*", auth);
-app.use("/api/revenue-entries/*", auth);
-app.use("/api/expense-entries/*", auth);
-app.use("/api/refund-entries/*", auth);
-app.use("/api/booking-requests/*", auth);
-app.use("/api/product-sales/*", auth);
-app.use("/api/events/*", auth);
-app.use("/api/users/*", auth);
-app.use("/api/message-templates/*", auth);
-app.use("/api/settings/*", auth);
-app.use("/api/qr-cards/*", auth);
-app.use("/api/monthly-subscriptions/*", auth);
-app.use("/api/enrollments/*", auth);
+// Billing — auth only, NO subscription gate (upgrade is callable even when expired)
+app.use("/api/billing/*", auth);
+app.route("/api/billing", billing);
+
+// All other protected routes — auth + subscription gate
+app.use("/api/students/*", auth, requireActiveSubscription);
+app.use("/api/courses/*", auth, requireActiveSubscription);
+app.use("/api/sync/*", auth, requireActiveSubscription);
+app.use("/api/groups/*", auth, requireActiveSubscription);
+app.use("/api/attendance-sessions/*", auth, requireActiveSubscription);
+app.use("/api/attendance-records/*", auth, requireActiveSubscription);
+app.use("/api/assessments/*", auth, requireActiveSubscription);
+app.use("/api/assessment-grades/*", auth, requireActiveSubscription);
+app.use("/api/products/*", auth, requireActiveSubscription);
+app.use("/api/course-products/*", auth, requireActiveSubscription, requireCombinedPackagesFeature);
+app.use("/api/session-payments/*", auth, requireActiveSubscription);
+app.use("/api/revenue-entries/*", auth, requireActiveSubscription);
+app.use("/api/expense-entries/*", auth, requireActiveSubscription);
+app.use("/api/refund-entries/*", auth, requireActiveSubscription);
+app.use("/api/booking-requests/*", auth, requireActiveSubscription);
+app.use("/api/product-sales/*", auth, requireActiveSubscription, requireInventorySalesFeature);
+app.use("/api/events/*", auth, requireActiveSubscription);
+app.use("/api/users/*", auth, requireActiveSubscription);
+app.use("/api/message-templates/*", auth, requireActiveSubscription);
+app.use("/api/settings/*", auth, requireActiveSubscription);
+app.use("/api/qr-cards/*", auth, requireActiveSubscription);
+app.use("/api/monthly-subscriptions/*", auth, requireActiveSubscription);
+app.use("/api/enrollments/*", auth, requireActiveSubscription);
 
 app.route("/api/students", students);
 app.route("/api/courses", courses);
 app.route("/api/sync", sync);
 
-app.route("/api/groups", createCrudRouter("groups", "group", schema.groups));
+app.route("/api/groups", createCrudRouter("groups", "group", schema.groups, {
+  numericLimit: { limitKey: "max_branches", countColumn: schema.groups.id },
+}));
 app.route("/api/attendance-sessions", createCrudRouter("attendanceSessions", "attendanceSession", schema.attendanceSessions));
 app.route("/api/attendance-records", createCrudRouter("attendanceRecords", "attendanceRecord", schema.attendanceRecords));
 app.route("/api/assessments", createCrudRouter("assessments", "assessment", schema.assessments));

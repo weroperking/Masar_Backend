@@ -430,5 +430,21 @@ export type QrCard = typeof qrCards.$inferSelect;
 export type NewQrCard = typeof qrCards.$inferInsert;
 export type MonthlySubscription = typeof monthlySubscriptions.$inferSelect;
 export type NewMonthlySubscription = typeof monthlySubscriptions.$inferInsert;
+export const subscriptions = pgTable("subscriptions", {
+  id: uuid("id").primaryKey(),
+  orgId: text("org_id").notNull().unique(),
+  plan: text("plan").notNull(),
+  status: text("status").notNull(),
+  trialEndsAt: timestamp("trial_ends_at", { withTimezone: true, mode: "string" }),
+  currentPeriodEnd: timestamp("current_period_end", { withTimezone: true, mode: "string" }),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull(),
+}, (table) => ({
+  orgIdIdx: index("subscriptions_org_id_idx").on(table.orgId),
+}));
+
+export type Subscription = typeof subscriptions.$inferSelect;
+export type NewSubscription = typeof subscriptions.$inferInsert;
+
 export type Enrollment = typeof enrollments.$inferSelect;
 export type NewEnrollment = typeof enrollments.$inferInsert;

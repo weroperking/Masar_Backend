@@ -1,14 +1,23 @@
 import { Hono } from "hono";
 import { createDb, schema } from "../db";
-import { eq, and, isNull } from "drizzle-orm";
+import { eq, and, isNull, sql } from "drizzle-orm";
 import type { PgTable } from "drizzle-orm/pg-core";
+import { PLAN_LIMITS } from "../config/plans";
+import type { PlanKey, NumericLimitKey } from "../config/plans";
+import type { EffectiveSubscription } from "./subscriptions";
 
 type NewRecord = Record<string, any>;
 
 export function createCrudRouter(
   plural: string,
   singular: string,
-  table: PgTable<any>
+  table: PgTable<any>,
+  options?: {
+    numericLimit?: {
+      limitKey: NumericLimitKey;
+      countColumn: any;
+    };
+  }
 ) {
   const app = new Hono();
 
@@ -26,6 +35,41 @@ export function createCrudRouter(
     const db = createDb(c.env.DATABASE_URL as string);
     const orgId = c.get("orgId") as string;
     const body = await c.req.json<NewRecord>();
+
+    if (options?.numericLimit) {
+      const subscription = c.get("subscription") as EffectiveSubscription;
+      if (subscription) {
+        const planKey = subscription.plan as PlanKey;
+        const limits = PLAN_LIMITS[planKey];
+        const limitValue = limits?.[options.numericLimit.limitKey];
+
+        if (limitValue !== null && limitValue !== undefined) {
+          const countResult = await db
+            .select({ count: sql<number>`count(*)` })
+            .from(table)
+            .where(
+              and(
+                eq((table as any).orgId, orgId),
+                isNull((table as any).deletedAt),
+              ),
+            );
+
+          const currentCount = Number(countResult[0]?.count ?? 0);
+          if (currentCount >= limitValue) {
+            return c.json(
+              {
+                error: "LIMIT_REACHED",
+                limit: limitValue,
+                current: currentCount,
+                plan: subscription.plan,
+              },
+              403,
+            );
+          }
+        }
+      }
+    }
+
     const record = {
       ...body,
       id: body.id || globalThis.crypto.randomUUID(),

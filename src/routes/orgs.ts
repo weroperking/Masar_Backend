@@ -1,12 +1,8 @@
 import { Hono } from "hono";
 import { createDb, schema } from "../db";
 import { eq, and, desc, isNull } from "drizzle-orm";
-import { createRequireActiveSubscription } from "../middleware/subscription";
 
 const app = new Hono<{ Bindings: CloudflareBindings }>();
-const requireActiveSubscription = createRequireActiveSubscription();
-
-app.use("/*", requireActiveSubscription);
 
 app.post("/:id/upgrade-proposal", async (c) => {
   const orgId = c.get("orgId") as string;

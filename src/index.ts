@@ -95,8 +95,10 @@ app.route("/api/qr-cards", createCrudRouter("qrCards", "qrCard", schema.qrCards)
 app.route("/api/monthly-subscriptions", createCrudRouter("monthlySubscriptions", "monthlySubscription", schema.monthlySubscriptions));
 app.route("/api/enrollments", createCrudRouter("enrollments", "enrollment", schema.enrollments));
 
-// Tenant-facing org upgrade proposal routes (auth + active subscription required)
+// Tenant-facing org routes — auth + active subscription required
+// Exclude upgrade-proposal paths so expired/trialing orgs can request upgrades
 app.use("/api/orgs/*", auth, requireActiveSubscription);
+app.use("/api/orgs/:id/upgrade-proposal*", auth);
 app.route("/api/orgs", orgs);
 
 // Admin routes (protected by shared secret header, no Clerk auth)

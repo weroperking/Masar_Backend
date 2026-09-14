@@ -21,14 +21,37 @@ export async function getSubscription(
 	}
 
 	const db = createDb(databaseUrl);
-	const result = await db
+	let result = await db
 		.select()
 		.from(schema.subscriptions)
 		.where(eq(schema.subscriptions.orgId, orgId))
 		.limit(1);
 
 	if (result.length === 0) {
-		return null;
+		const now = new Date().toISOString();
+		const trialStartedAt = now;
+		const trialEndsAt = new Date(
+			Date.now() + 14 * 24 * 60 * 60 * 1000,
+		).toISOString();
+
+		await db
+			.insert(schema.subscriptions)
+			.values({
+				id: globalThis.crypto.randomUUID(),
+				orgId,
+				plan: "trial",
+				status: "trialing",
+				trialStartedAt,
+				trialEndsAt,
+				createdAt: now,
+				updatedAt: now,
+			});
+
+		result = await db
+			.select()
+			.from(schema.subscriptions)
+			.where(eq(schema.subscriptions.orgId, orgId))
+			.limit(1);
 	}
 
 	const subscription = result[0];

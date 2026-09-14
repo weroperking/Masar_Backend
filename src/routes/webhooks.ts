@@ -42,7 +42,10 @@ app.post("/clerk", async (c) => {
 					createdAt: now,
 					updatedAt: now,
 				})
-				.onConflictDoNothing({ target: schema.subscriptions.orgId });
+				.onConflictDoUpdate({
+					target: schema.subscriptions.orgId,
+					set: { name, updatedAt: now },
+				});
 
 			return c.json({ received: true, orgId, name, trialStartedAt, trialEndsAt, country, city }, 201);
 		}

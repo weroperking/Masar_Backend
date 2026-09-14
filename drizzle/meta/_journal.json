@@ -50,6 +50,13 @@
       "when": 1789382362773,
       "tag": "0006_lethal_skin",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1789400149985,
+      "tag": "0007_shocking_zarda",
+      "breakpoints": true
     }
   ]
 }

@@ -436,6 +436,7 @@ export const subscriptions = pgTable("subscriptions", {
   name: text("name"),
   plan: text("plan").notNull(),
   status: text("status").notNull(),
+  trialStartedAt: timestamp("trial_started_at", { withTimezone: true, mode: "string" }),
   trialEndsAt: timestamp("trial_ends_at", { withTimezone: true, mode: "string" }),
   currentPeriodEnd: timestamp("current_period_end", { withTimezone: true, mode: "string" }),
   country: text("country"),

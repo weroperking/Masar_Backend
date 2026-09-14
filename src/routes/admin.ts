@@ -60,6 +60,7 @@ app.get("/orgs", async (c) => {
     const proposal = latestByOrg.get(sub.orgId);
     return {
       org_id: sub.orgId,
+      name: sub.name,
       plan: sub.plan,
       status: sub.status,
       trial_ends_at: sub.trialEndsAt,
@@ -114,6 +115,7 @@ app.get("/orgs/:id", async (c) => {
   return c.json({
     org: {
       ...subscription,
+      name: subscription.name,
       student_count: Number(studentCountRow?.count ?? 0),
       branch_count: Number(branchCountRow?.count ?? 0),
       latest_proposal: proposal || null,

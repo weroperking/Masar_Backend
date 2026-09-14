@@ -43,6 +43,13 @@
       "when": 1789339366732,
       "tag": "0005_moaning_slayback",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1789382362773,
+      "tag": "0006_lethal_skin",
+      "breakpoints": true
     }
   ]
 }

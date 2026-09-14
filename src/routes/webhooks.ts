@@ -14,6 +14,7 @@ app.post("/clerk", async (c) => {
 
 		if (evt.type === "organization.created") {
 			const orgId = evt.data.id as string;
+			const name = (evt.data.name as string | undefined) || null;
 			const now = new Date().toISOString();
 			const trialEndsAt = new Date(
 				Date.now() + 14 * 24 * 60 * 60 * 1000,
@@ -30,6 +31,7 @@ app.post("/clerk", async (c) => {
 				.values({
 					id: globalThis.crypto.randomUUID(),
 					orgId,
+					name,
 					plan: "trial",
 					status: "trialing",
 					trialEndsAt,
@@ -40,7 +42,7 @@ app.post("/clerk", async (c) => {
 				})
 				.onConflictDoNothing({ target: schema.subscriptions.orgId });
 
-			return c.json({ received: true, orgId, trialEndsAt, country, city }, 201);
+			return c.json({ received: true, orgId, name, trialEndsAt, country, city }, 201);
 		}
 
 		return c.json({ received: true, eventType: evt.type }, 200);

@@ -433,6 +433,7 @@ export type NewMonthlySubscription = typeof monthlySubscriptions.$inferInsert;
 export const subscriptions = pgTable("subscriptions", {
   id: uuid("id").primaryKey(),
   orgId: text("org_id").notNull().unique(),
+  name: text("name"),
   plan: text("plan").notNull(),
   status: text("status").notNull(),
   trialEndsAt: timestamp("trial_ends_at", { withTimezone: true, mode: "string" }),

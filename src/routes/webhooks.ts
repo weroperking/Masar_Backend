@@ -19,6 +19,10 @@ app.post("/clerk", async (c) => {
 				Date.now() + 14 * 24 * 60 * 60 * 1000,
 			).toISOString();
 
+			const cf = c.req.raw.cf as { country?: string; city?: string } | undefined;
+			const country = cf?.country || null;
+			const city = cf?.city || null;
+
 			const db = createDb(c.env.DATABASE_URL as string);
 
 			await db
@@ -29,12 +33,14 @@ app.post("/clerk", async (c) => {
 					plan: "trial",
 					status: "trialing",
 					trialEndsAt,
+					country,
+					city,
 					createdAt: now,
 					updatedAt: now,
 				})
 				.onConflictDoNothing({ target: schema.subscriptions.orgId });
 
-			return c.json({ received: true, orgId, trialEndsAt }, 201);
+			return c.json({ received: true, orgId, trialEndsAt, country, city }, 201);
 		}
 
 		return c.json({ received: true, eventType: evt.type }, 200);

@@ -8,8 +8,11 @@ import sync from "./routes/sync";
 import publicLookup from "./routes/public-lookup";
 import webhooks from "./routes/webhooks";
 import billing from "./routes/billing";
+import orgs from "./routes/orgs";
+import admin from "./routes/admin";
 import { createAuthMiddleware } from "./middleware/auth";
 import { createRequireActiveSubscription, createRequireFeature } from "./middleware/subscription";
+import { createAdminMiddleware } from "./middleware/admin";
 import { createCrudRouter } from "./lib/crud";
 import { createDb, schema } from "./db";
 
@@ -91,5 +94,13 @@ app.route("/api/settings", createCrudRouter("settings", "setting", schema.settin
 app.route("/api/qr-cards", createCrudRouter("qrCards", "qrCard", schema.qrCards));
 app.route("/api/monthly-subscriptions", createCrudRouter("monthlySubscriptions", "monthlySubscription", schema.monthlySubscriptions));
 app.route("/api/enrollments", createCrudRouter("enrollments", "enrollment", schema.enrollments));
+
+// Tenant-facing org upgrade proposal routes (auth + active subscription required)
+app.use("/api/orgs/*", auth, requireActiveSubscription);
+app.route("/api/orgs", orgs);
+
+// Admin routes (protected by shared secret header, no Clerk auth)
+app.use("/admin/*", createAdminMiddleware());
+app.route("/admin", admin);
 
 export default app;

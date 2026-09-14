@@ -437,6 +437,8 @@ export const subscriptions = pgTable("subscriptions", {
   status: text("status").notNull(),
   trialEndsAt: timestamp("trial_ends_at", { withTimezone: true, mode: "string" }),
   currentPeriodEnd: timestamp("current_period_end", { withTimezone: true, mode: "string" }),
+  country: text("country"),
+  city: text("city"),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull(),
 }, (table) => ({
@@ -445,6 +447,24 @@ export const subscriptions = pgTable("subscriptions", {
 
 export type Subscription = typeof subscriptions.$inferSelect;
 export type NewSubscription = typeof subscriptions.$inferInsert;
+
+export const orgUpgradeProposals = pgTable("org_upgrade_proposals", {
+  id: uuid("id").primaryKey(),
+  orgId: text("org_id").notNull(),
+  requestedPlan: text("requested_plan").notNull(),
+  currentPlan: text("current_plan").notNull(),
+  status: text("status").notNull().default("pending"),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull(),
+  resolvedAt: timestamp("resolved_at", { withTimezone: true, mode: "string" }),
+  resolvedBy: text("resolved_by"),
+  notes: text("notes"),
+}, (table) => ({
+  orgIdIdx: index("org_upgrade_proposals_org_id_idx").on(table.orgId),
+  statusIdx: index("org_upgrade_proposals_status_idx").on(table.status),
+}));
+
+export type OrgUpgradeProposal = typeof orgUpgradeProposals.$inferSelect;
+export type NewOrgUpgradeProposal = typeof orgUpgradeProposals.$inferInsert;
 
 export type Enrollment = typeof enrollments.$inferSelect;
 export type NewEnrollment = typeof enrollments.$inferInsert;

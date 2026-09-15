@@ -4,6 +4,7 @@ import pingDb from "./routes/ping-db";
 import me from "./routes/me";
 import students from "./routes/students";
 import courses from "./routes/courses";
+import attendance from "./routes/attendance";
 import sync from "./routes/sync";
 import publicLookup from "./routes/public-lookup";
 import webhooks from "./routes/webhooks";
@@ -46,6 +47,7 @@ app.route("/api/billing", billing);
 // All other protected routes — auth + subscription gate
 app.use("/api/students/*", auth, requireActiveSubscription);
 app.use("/api/courses/*", auth, requireActiveSubscription);
+app.use("/api/attendance/*", auth, requireActiveSubscription);
 app.use("/api/sync/*", auth, requireActiveSubscription);
 app.use("/api/groups/*", auth, requireActiveSubscription);
 app.use("/api/attendance-sessions/*", auth, requireActiveSubscription);
@@ -70,6 +72,7 @@ app.use("/api/enrollments/*", auth, requireActiveSubscription);
 
 app.route("/api/students", students);
 app.route("/api/courses", courses);
+app.route("/api/attendance", attendance);
 app.route("/api/sync", sync);
 
 app.route("/api/groups", createCrudRouter("groups", "group", schema.groups, {

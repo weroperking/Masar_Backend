@@ -72,7 +72,7 @@ export function createCrudRouter(
 
     const record = {
       ...body,
-      id: body.id || globalThis.crypto.randomUUID(),
+      id: globalThis.crypto.randomUUID(),
       orgId,
       updatedAt: new Date().toISOString(),
       createdAt: new Date().toISOString(),

@@ -28,7 +28,7 @@ export function createCrudRoutes(tableName: TableName): Hono<any> {
 
     const record = {
       ...entityData,
-      id: body.id ?? crypto.randomUUID(),
+      id: globalThis.crypto.randomUUID(),
       orgId,
       updatedAt: updated_at ?? new Date().toISOString(),
       deletedAt: null,

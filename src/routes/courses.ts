@@ -24,6 +24,7 @@ app.post("/", async (c) => {
 
   const course = {
     ...body,
+    id: globalThis.crypto.randomUUID(),
     orgId,
     updatedAt: new Date().toISOString(),
   };

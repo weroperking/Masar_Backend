@@ -54,8 +54,8 @@ app.post("/", async (c) => {
   }
 
   const student = {
-    id: body.id || globalThis.crypto.randomUUID(),
     ...body,
+    id: globalThis.crypto.randomUUID(),
     orgId,
     updatedAt: new Date().toISOString(),
   };

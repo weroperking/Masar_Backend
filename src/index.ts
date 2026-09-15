@@ -27,8 +27,8 @@ app.get("/", (c) => {
   return c.json({ status: "ok" });
 });
 
-app.use("/api/*", cors({ origin: ["https://masar.top", "https://app.masar.top"] }));
-app.use("/public/*", cors({ origin: ["https://masar.top", "https://app.masar.top"] }));
+app.use("/api/*", cors({ origin: "*" }));
+app.use("/public/*", cors({ origin: "*" }));
 
 app.route("/public", publicLookup);
 app.route("/api", pingDb);

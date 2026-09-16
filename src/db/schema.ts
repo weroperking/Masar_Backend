@@ -390,6 +390,43 @@ export const enrollments = pgTable("enrollments", {
   orgIdIdx: index("enrollments_org_id_idx").on(table.orgId),
 }));
 
+export const syncKeys = pgTable("sync_keys", {
+  id: text("id").primaryKey(),
+  orgId: text("org_id").notNull().unique(),
+  dekEncrypted: text("dek_encrypted").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull(),
+}, (table) => ({
+  orgIdIdx: index("sync_keys_org_id_idx").on(table.orgId),
+}));
+
+export const syncDeviceKeys = pgTable("sync_device_keys", {
+  id: text("id").primaryKey(),
+  orgId: text("org_id").notNull(),
+  publicKeyHash: text("public_key_hash").notNull(),
+  wrappedDek: text("wrapped_dek").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true, mode: "string" }).notNull(),
+}, (table) => ({
+  orgIdIdx: index("sync_device_keys_org_id_idx").on(table.orgId),
+  publicKeyHashIdx: index("sync_device_keys_pubkey_hash_idx").on(table.publicKeyHash),
+  expiresAtIdx: index("sync_device_keys_expires_at_idx").on(table.expiresAt),
+}));
+
+export const syncIdempotencyKeys = pgTable("sync_idempotency_keys", {
+  idempotencyKey: text("idempotency_key").primaryKey(),
+  orgId: text("org_id").notNull(),
+  entityType: text("entity_type").notNull(),
+  entityId: text("entity_id").notNull(),
+  status: text("status").notNull(),
+  serverConfirmedRecord: jsonb("server_confirmed_record"),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true, mode: "string" }).notNull(),
+}, (table) => ({
+  orgIdIdx: index("sync_idempotency_keys_org_id_idx").on(table.orgId),
+  expiresAtIdx: index("sync_idempotency_keys_expires_at_idx").on(table.expiresAt),
+}));
+
 export type Student = typeof students.$inferSelect;
 export type NewStudent = typeof students.$inferInsert;
 export type Course = typeof courses.$inferSelect;
@@ -472,3 +509,10 @@ export type NewOrgUpgradeProposal = typeof orgUpgradeProposals.$inferInsert;
 
 export type Enrollment = typeof enrollments.$inferSelect;
 export type NewEnrollment = typeof enrollments.$inferInsert;
+
+export type SyncKey = typeof syncKeys.$inferSelect;
+export type NewSyncKey = typeof syncKeys.$inferInsert;
+export type SyncDeviceKey = typeof syncDeviceKeys.$inferSelect;
+export type NewSyncDeviceKey = typeof syncDeviceKeys.$inferInsert;
+export type SyncIdempotencyKey = typeof syncIdempotencyKeys.$inferSelect;
+export type NewSyncIdempotencyKey = typeof syncIdempotencyKeys.$inferInsert;

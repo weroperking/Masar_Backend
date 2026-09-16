@@ -3,3 +3,9 @@ DATABASE_URL=postgresql://user:password@host/db?sslmode=require
 
 # Clerk Secret Key (sk_test_...)
 CLERK_SECRET_KEY=sk_test_your_key_here
+
+# Encryption: KEK for encrypting sync DEKs at rest (32-byte Base64 string)
+KEK=
+
+# Development only: allow plaintext sync without encryption headers
+SYNC_ALLOW_PLAINTEXT=true

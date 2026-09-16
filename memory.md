@@ -62,10 +62,16 @@ All SELECT queries filter by `orgId = <current org>` + `deleted_at IS NULL`.
 - POST generates `id` via `crypto.randomUUID()` because Neon tables have NO default on `id`.
 - All routes mounted with `app.use("/api/<table>/*", auth)`.
 
-### 3.4 Sync Protocol (`/api/sync/pull` + `/api/sync/push`)
-- `pull?table=...&since=ISO_TIMESTAMP` → returns all rows for org where `updated_at > since`
-- `push` accepts **array** of `{ table, records: [...] }`
-- **CRITICAL:** Frontend sends `updated_at`/`deleted_at` as **millisecond numbers** (epoch ms). Server must convert to ISO string before insert/update. This was a live bug — see §5.
+### 3.4 Sync Protocol (`/api/sync/handshake`, `/api/sync/push`, `/api/sync/pull`)
+- **Handshake:** `POST /api/sync/handshake` with `{ devicePublicKey: Base64(SPKI RSA-OAEP pubkey) }` → returns `{ wrappedDek, publicKeyHash, algorithm: "RSA-OAEP" }`. DEK is per-org, generated once and persisted encrypted with server KEK. Re-handshaking returns same DEK re-wrapped. Device key binding has 24h TTL.
+- **Push:** `POST /api/sync/push` accepts `{ operations: [{ idempotencyKey, entityType, entityId, operation, payload, localTimestamp }] }`. Returns `{ results: [{ idempotencyKey, status, serverConfirmedRecord }] }`.
+- **Pull:** `GET /api/sync/pull?since=<ISO timestamp>` → returns `{ timestamp, data: { students: [...], courses: [...], ... } }`. Includes soft-deleted records. No pagination (single response).
+- **Idempotency:** Keys stored in `sync_idempotency_keys` table with 24h TTL.
+- **Client-generated UUIDs:** Accepted and trusted on create operations.
+- **Encryption:** Optional via `X-Sync-Encrypted: true` header. Encrypted payloads use AES-256-GCM with 12-byte IV prepended to ciphertext.
+- **KEK:** Required env var for encrypting DEKs at rest. Base64-encoded 32-byte key. Must be set via `wrangler secret put KEK` before deployment. If missing, `/api/sync/handshake` returns 500 with `{ error: "KEK not configured" }` — no silent fallback.
+- **Plaintext restriction:** In production (`SYNC_ALLOW_PLAINTEXT` not set or not `"true"`), both `/api/sync/push` and `/api/sync/pull` require the `X-Sync-Encrypted: true` header. Missing header returns 400 with `{ error: "Encryption required. Missing X-Sync-Encrypted header." }`. Plaintext is only allowed when `SYNC_ALLOW_PLAINTEXT=true` (set in `.dev.vars` for local dev only).
+- **DEK Persistence:** CRITICAL — DEK is generated once per org and stored encrypted with KEK in `sync_keys` table. It is NOT regenerated on each handshake. Re-handshaking retrieves the same DEK and re-wraps it with the new device's public key. The 24h TTL applies to the device key binding (in `sync_device_keys`), not the DEK itself.
 
 ---
 
@@ -169,8 +175,9 @@ Real org: `org_3IurnHEfyJPaqw5vXlz8JbzQMba`
 | `/api/<table>` | POST | Yes | Create (generates UUID) |
 | `/api/<table>/<id>` | PATCH | Yes | Update |
 | `/api/<table>/<id>` | DELETE | Yes | Soft delete (`deleted_at = now`) |
-| `/api/sync/pull` | GET | Yes | `?table=...&since=ISO_TIMESTAMP` |
-| `/api/sync/push` | POST | Yes | Body: `[{ table, records }]` array |
+| `/api/sync/handshake` | POST | Yes | `{ devicePublicKey }` → `{ wrappedDek, publicKeyHash, algorithm: "RSA-OAEP" }` |
+| `/api/sync/push` | POST | Yes | Body: `{ operations: [...] }`, returns `{ results: [...] }` |
+| `/api/sync/pull` | GET | Yes | `?since=<timestamp>` returns `{ timestamp, data: { ... } }` |
 
 Tables with CRUD: students, courses, groups, attendance_sessions, attendance_records, assessments, assessment_grades, products, course_products, session_payments, revenue_entries, expense_entries, refund_entries, booking_requests, product_sales, events, users, message_templates, settings, qr_cards, monthly_subscriptions, enrollments
 

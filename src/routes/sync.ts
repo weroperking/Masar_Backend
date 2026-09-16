@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { createDb, schema } from "../db";
-import { eq, and, gt } from "drizzle-orm";
+import { eq, and, gte } from "drizzle-orm";
 
 const app = new Hono();
 
@@ -29,105 +29,585 @@ const tenantTables: Record<string, any> = {
   enrollments: schema.enrollments,
 };
 
+function encodeBase64(data: Uint8Array | ArrayBufferLike): string {
+  const bytes = new Uint8Array(data);
+  let binary = "";
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+}
+
+function decodeBase64(data: string): Uint8Array {
+  const binary = atob(data);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+}
+
+function getKek(kekBase64: string): Uint8Array {
+  if (!kekBase64) {
+    throw new Error("KEK not configured");
+  }
+  return decodeBase64(kekBase64);
+}
+
+async function getKekKey(kekBase64: string): Promise<CryptoKey> {
+  const kekBuffer = getKek(kekBase64);
+  return crypto.subtle.importKey(
+    "raw",
+    kekBuffer,
+    { name: "AES-CTR", length: 256 },
+    false,
+    ["encrypt", "decrypt"]
+  );
+}
+
+async function encryptDekAtRest(kekBase64: string, dek: Uint8Array): Promise<string> {
+  const kekKey = await getKekKey(kekBase64);
+  const iv = crypto.getRandomValues(new Uint8Array(16));
+  const encrypted = await crypto.subtle.encrypt(
+    { name: "AES-CTR", counter: iv, blockLength: 128 },
+    kekKey,
+    dek
+  );
+
+  const result = new Uint8Array(iv.length + (encrypted as ArrayBuffer).byteLength);
+  result.set(iv, 0);
+  result.set(new Uint8Array(encrypted), iv.length);
+
+  return encodeBase64(result);
+}
+
+async function decryptDekAtRest(kekBase64: string, encryptedDek: string): Promise<Uint8Array> {
+  const dekBytes = decodeBase64(encryptedDek);
+  const iv = dekBytes.slice(0, 16);
+  const ciphertext = dekBytes.slice(16);
+
+  const kekKey = await getKekKey(kekBase64);
+  const decrypted = await crypto.subtle.decrypt(
+    { name: "AES-CTR", counter: iv, blockLength: 128 },
+    kekKey,
+    ciphertext
+  );
+
+  return new Uint8Array(decrypted);
+}
+
+async function getOrCreateOrgDek(
+  db: ReturnType<typeof createDb>,
+  orgId: string,
+  kekBase64: string
+): Promise<Uint8Array> {
+  const existing = await db
+    .select()
+    .from(schema.syncKeys)
+    .where(eq(schema.syncKeys.orgId, orgId))
+    .limit(1);
+
+   if (existing.length > 0) {
+    return decryptDekAtRest(kekBase64, existing[0].dekEncrypted);
+  }
+
+  const dekBuffer = crypto.getRandomValues(new Uint8Array(32));
+  const dekEncrypted = await encryptDekAtRest(kekBase64, dekBuffer);
+  const now = new Date().toISOString();
+
+  await db.insert(schema.syncKeys).values({
+    id: crypto.randomUUID(),
+    orgId,
+    dekEncrypted,
+    createdAt: now,
+    updatedAt: now,
+  });
+
+  return dekBuffer;
+}
+
+async function getOrStoreDeviceKey(
+  db: ReturnType<typeof createDb>,
+  orgId: string,
+  publicKeyBase64: string,
+  wrappedDek: string
+): Promise<string> {
+  const hashBuffer = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(publicKeyBase64)
+  );
+  const publicKeyHash = Array.from(new Uint8Array(hashBuffer))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+
+  const existing = await db
+    .select()
+    .from(schema.syncDeviceKeys)
+    .where(eq(schema.syncDeviceKeys.publicKeyHash, publicKeyHash))
+    .limit(1);
+
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+
+  if (existing.length > 0) {
+    await db
+      .update(schema.syncDeviceKeys)
+      .set({
+        wrappedDek,
+        expiresAt: expiresAt.toISOString(),
+      })
+      .where(eq(schema.syncDeviceKeys.id, existing[0].id));
+  } else {
+    await db.insert(schema.syncDeviceKeys).values({
+      id: crypto.randomUUID(),
+      orgId,
+      publicKeyHash,
+      wrappedDek,
+      createdAt: now.toISOString(),
+      expiresAt: expiresAt.toISOString(),
+    });
+  }
+
+  return publicKeyHash;
+}
+
+async function getDekFromHeader(
+  c: any,
+  db: ReturnType<typeof createDb>,
+  orgId: string,
+  kekBase64: string
+): Promise<CryptoKey | null> {
+  const authHeader = c.req.header("X-Sync-Auth");
+  if (!authHeader) return null;
+
+  let publicKeyHash: string;
+  try {
+    const authData = JSON.parse(decodeBase64(authHeader));
+    publicKeyHash = authData.publicKeyHash;
+  } catch {
+    return null;
+  }
+
+  const deviceKeys = await db
+    .select()
+    .from(schema.syncDeviceKeys)
+    .where(
+      and(
+        eq(schema.syncDeviceKeys.orgId, orgId),
+        eq(schema.syncDeviceKeys.publicKeyHash, publicKeyHash),
+        gte(schema.syncDeviceKeys.expiresAt, new Date().toISOString())
+      )
+    )
+    .limit(1);
+
+  if (deviceKeys.length === 0) return null;
+  if (new Date(deviceKeys[0].expiresAt) < new Date()) return null;
+
+  const dekBuffer = await getOrCreateOrgDek(db, orgId, kekBase64);
+  try {
+    const key = await crypto.subtle.importKey(
+      "raw",
+      dekBuffer,
+      { name: "AES-GCM", length: 256 },
+      false,
+      ["encrypt", "decrypt"]
+    );
+    return key;
+  } catch {
+    return null;
+  }
+}
+
+async function encryptPayload(dek: CryptoKey, payload: any): Promise<string> {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const plaintext = JSON.stringify(payload);
+  const encoded = new TextEncoder().encode(plaintext);
+
+  const encrypted = await crypto.subtle.encrypt(
+    {
+      name: "AES-GCM",
+      iv: iv,
+    },
+    dek,
+    encoded
+  );
+
+  const combined = new Uint8Array(encrypted);
+  const result = new Uint8Array(iv.length + combined.length);
+  result.set(iv, 0);
+  result.set(combined, iv.length);
+
+  return encodeBase64(result);
+}
+
+async function decryptPayload(dek: CryptoKey, encryptedData: string): Promise<any> {
+  const combined = decodeBase64(encryptedData);
+  const iv = combined.slice(0, 12);
+  const ciphertext = combined.slice(12);
+
+  const decrypted = await crypto.subtle.decrypt(
+    {
+      name: "AES-GCM",
+      iv: iv,
+    },
+    dek,
+    ciphertext
+  );
+
+  const decoded = new TextDecoder().decode(decrypted);
+  return JSON.parse(decoded);
+}
+
+app.post("/handshake", async (c) => {
+  const db = createDb(c.env.DATABASE_URL as string);
+  const orgId = c.get("orgId");
+  const kekBase64 = c.env.KEK as string;
+  const body = await c.req.json<{ devicePublicKey: string }>();
+
+  if (!body.devicePublicKey) {
+    return c.json({ error: "Missing devicePublicKey" }, 400);
+  }
+
+  if (!kekBase64) {
+    return c.json({ error: "KEK not configured" }, 500);
+  }
+
+  try {
+    const publicKeyDer = decodeBase64(body.devicePublicKey);
+
+    const publicKey = await crypto.subtle.importKey(
+      "spki",
+      publicKeyDer,
+      {
+        name: "RSA-OAEP",
+        hash: "SHA-256",
+      },
+      false,
+      ["encrypt"]
+    );
+
+    const dekBuffer = await getOrCreateOrgDek(db, orgId, kekBase64);
+
+    const wrappedDek = await crypto.subtle.encrypt(
+      {
+        name: "RSA-OAEP",
+      },
+      publicKey,
+      dekBuffer
+    );
+
+    const wrappedDekBase64 = encodeBase64(new Uint8Array(wrappedDek));
+
+    const publicKeyHash = await getOrStoreDeviceKey(
+      db,
+      orgId,
+      body.devicePublicKey,
+      wrappedDekBase64
+    );
+
+    return c.json({
+      wrappedDek: wrappedDekBase64,
+      publicKeyHash,
+      algorithm: "RSA-OAEP",
+    });
+  } catch (err: any) {
+    return c.json({ error: `Handshake failed: ${err.message}` }, 400);
+  }
+});
+
 app.post("/push", async (c) => {
   const db = createDb(c.env.DATABASE_URL as string);
   const orgId = c.get("orgId");
-  const body = await c.req.json<{ table: string; records: any[] }[]>();
+  const kekBase64 = c.env.KEK as string;
+  const body = await c.req.json<{ operations: SyncOperation[] }>();
 
-  const results: { table: string; records: { id: string; status: string }[] }[] = [];
+  const isEncrypted = c.req.header("X-Sync-Encrypted") === "true";
+  const allowPlaintext = c.env.SYNC_ALLOW_PLAINTEXT === "true";
 
-  for (const group of body) {
-    const { table, records } = group;
-    const tableSchema = tenantTables[table];
+  if (!isEncrypted && !allowPlaintext) {
+    return c.json({ error: "Encryption required. Missing X-Sync-Encrypted header." }, 400);
+  }
 
-    if (!tableSchema) {
-      results.push({ table, records: records.map(r => ({ id: r.id, status: "error: unknown table" })) });
+  const dek = isEncrypted ? await getDekFromHeader(c, db, orgId, kekBase64) : null;
+
+  if (isEncrypted && !dek) {
+    return c.json({ error: "No valid DEK found for encrypted payload" }, 401);
+  }
+
+  const results: SyncPushResult[] = [];
+
+  for (const op of body.operations) {
+    const idempotencyKey = op.idempotencyKey;
+
+    const existingIdempotency = await db
+      .select()
+      .from(schema.syncIdempotencyKeys)
+      .where(eq(schema.syncIdempotencyKeys.idempotencyKey, idempotencyKey))
+      .limit(1);
+
+    if (existingIdempotency.length > 0) {
+      const record = existingIdempotency[0];
+      results.push({
+        idempotencyKey,
+        status: record.status,
+        serverConfirmedRecord: record.serverConfirmedRecord || undefined,
+      });
       continue;
     }
 
-    const recordResults: { id: string; status: string }[] = [];
-
-    for (const record of records) {
-      const { id, updated_at, deleted_at, ...data } = record;
-      const updatedAtStr = typeof updated_at === "number" ? new Date(updated_at).toISOString() : updated_at;
-      const deletedAtStr = deleted_at ? (typeof deleted_at === "number" ? new Date(deleted_at).toISOString() : deleted_at) : null;
-
-      const existing = await db
-        .select()
-        .from(tableSchema)
-        .where(and(eq(tableSchema.id, id), eq(tableSchema.orgId, orgId)));
-
-      if (existing.length > 0) {
-        const existingUpdatedAt = new Date(existing[0].updatedAt).getTime();
-        const incomingUpdatedAt = new Date(updated_at).getTime();
-
-        if (incomingUpdatedAt > existingUpdatedAt) {
-          await db
-            .update(tableSchema)
-            .set({ ...data, updatedAt: updatedAtStr })
-            .where(and(eq(tableSchema.id, id), eq(tableSchema.orgId, orgId)));
-          recordResults.push({ id, status: "updated" });
-        } else {
-          recordResults.push({ id, status: "skipped" });
-        }
-      } else {
-        const insertValues: Record<string, any> = {
-          ...data,
-          id,
-          orgId,
-          updatedAt: updatedAtStr,
-          deletedAt: deletedAtStr,
-          createdAt: updatedAtStr,
-        };
-
-        if (table === "monthlySubscriptions") {
-          const sid = data.studentId || data.student_id;
-          const cid = data.courseId || data.course_id;
-          if (sid && cid) {
-            const [student] = await db
-              .select({
-                discountType: schema.students.discountType,
-                discountValue: schema.students.discountValue,
-              })
-              .from(schema.students)
-              .where(and(eq(schema.students.id, sid), eq(schema.students.orgId, orgId)))
-              .limit(1);
-
-            const [course] = await db
-              .select({ price: schema.courses.price })
-              .from(schema.courses)
-              .where(and(eq(schema.courses.id, cid), eq(schema.courses.orgId, orgId)))
-              .limit(1);
-
-            const basePrice = Number(course?.price || 0);
-            let amount = basePrice;
-            if (student?.discountType === "percentage" && student?.discountValue > 0) {
-              amount = Math.round(basePrice * (1 - student.discountValue / 100));
-            } else if (student?.discountType === "fixed" && student?.discountValue > 0) {
-              amount = Math.max(0, basePrice - student.discountValue);
-            }
-            insertValues.amount = amount;
-          }
-        }
-
-        await db.insert(tableSchema).values(insertValues);
-        recordResults.push({ id, status: "created" });
+    let processedPayload = op.payload;
+    if (isEncrypted && dek && op.encryptedPayload) {
+      try {
+        processedPayload = await decryptPayload(dek, op.encryptedPayload);
+      } catch {
+        processedPayload = op.payload;
       }
     }
 
-    results.push({ table, records: recordResults });
+    const entityType = op.entityType;
+    const entityId = op.entityId;
+    const operation = op.operation;
+    const localTimestamp = new Date(op.localTimestamp).toISOString();
+
+    const tableSchema = tenantTables[entityType];
+    if (!tableSchema) {
+      const status = "error_unknown_entity";
+      await db.insert(schema.syncIdempotencyKeys).values({
+        idempotencyKey,
+        orgId,
+        entityType,
+        entityId,
+        status,
+        serverConfirmedRecord: null,
+        createdAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+      });
+      results.push({ idempotencyKey, status });
+      continue;
+    }
+
+    try {
+      const now = new Date().toISOString();
+
+      if (operation === "delete" || (processedPayload as any).deletedAt) {
+        const deletedAt = processedPayload.deletedAt
+          ? (typeof processedPayload.deletedAt === "number"
+            ? new Date(processedPayload.deletedAt).toISOString()
+            : processedPayload.deletedAt)
+          : localTimestamp;
+
+        await db
+          .update(tableSchema)
+          .set({ deletedAt, updatedAt: deletedAt })
+          .where(and(eq(tableSchema.id, entityId), eq(tableSchema.orgId, orgId)));
+
+        const serverConfirmedRecord = {
+          ...processedPayload,
+          id: entityId,
+          orgId,
+          updatedAt: deletedAt,
+          deletedAt,
+        };
+
+        await db.insert(schema.syncIdempotencyKeys).values({
+          idempotencyKey,
+          orgId,
+          entityType,
+          entityId,
+          status: "success",
+          serverConfirmedRecord,
+          createdAt: now,
+          expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+        });
+
+        results.push({
+          idempotencyKey,
+          status: "success",
+          serverConfirmedRecord,
+        });
+      } else {
+        const existing = await db
+          .select()
+          .from(tableSchema)
+          .where(and(eq(tableSchema.id, entityId), eq(tableSchema.orgId, orgId)));
+
+        const sanitizedData: Record<string, any> = {};
+        for (const [key, value] of Object.entries(processedPayload)) {
+          if (key === "id" || key === "orgId" || key === "org_id" || key === "deletedAt" || key === "updatedAt") continue;
+          const camelKey = key.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
+          sanitizedData[camelKey] = value;
+        }
+
+        if (existing.length > 0) {
+          const existingUpdatedAt = new Date(existing[0].updatedAt).getTime();
+          const incomingUpdatedAt = new Date(localTimestamp).getTime();
+
+          if (incomingUpdatedAt > existingUpdatedAt) {
+            await db
+              .update(tableSchema)
+              .set({ ...sanitizedData, updatedAt: localTimestamp })
+              .where(and(eq(tableSchema.id, entityId), eq(tableSchema.orgId, orgId)));
+
+            const [updatedRecord] = await db
+              .select()
+              .from(tableSchema)
+              .where(and(eq(tableSchema.id, entityId), eq(tableSchema.orgId, orgId)))
+              .limit(1);
+
+            await db.insert(schema.syncIdempotencyKeys).values({
+              idempotencyKey,
+              orgId,
+              entityType,
+              entityId,
+              status: "success",
+              serverConfirmedRecord: updatedRecord,
+              createdAt: now,
+              expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+            });
+
+            results.push({
+              idempotencyKey,
+              status: "success",
+              serverConfirmedRecord: updatedRecord,
+            });
+          } else {
+            const serverConfirmedRecord = existing[0];
+            await db.insert(schema.syncIdempotencyKeys).values({
+              idempotencyKey,
+              orgId,
+              entityType,
+              entityId,
+              status: "ignored",
+              serverConfirmedRecord: existing[0],
+              createdAt: now,
+              expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+            });
+
+            results.push({
+              idempotencyKey,
+              status: "ignored",
+              serverConfirmedRecord,
+            });
+          }
+        } else {
+          if (entityType === "monthlySubscriptions") {
+            const sid = processedPayload.studentId || processedPayload.student_id;
+            const cid = processedPayload.courseId || processedPayload.course_id;
+            if (sid && cid) {
+              const [student] = await db
+                .select({
+                  discountType: schema.students.discountType,
+                  discountValue: schema.students.discountValue,
+                })
+                .from(schema.students)
+                .where(and(eq(schema.students.id, sid), eq(schema.students.orgId, orgId)))
+                .limit(1);
+
+              const [course] = await db
+                .select({ price: schema.courses.price })
+                .from(schema.courses)
+                .where(and(eq(schema.courses.id, cid), eq(schema.courses.orgId, orgId)))
+                .limit(1);
+
+              const basePrice = Number(course?.price || 0);
+              let amount = basePrice;
+              if (student?.discountType === "percentage" && student?.discountValue > 0) {
+                amount = Math.round(basePrice * (1 - student.discountValue / 100));
+              } else if (student?.discountType === "fixed" && student?.discountValue > 0) {
+                amount = Math.max(0, basePrice - student.discountValue);
+              }
+              sanitizedData.amount = amount;
+            }
+          }
+
+          const insertValues: Record<string, any> = {
+            ...sanitizedData,
+            id: entityId,
+            orgId,
+            updatedAt: localTimestamp,
+            createdAt: processedPayload.createdAt || localTimestamp,
+          };
+
+          if ("deletedAt" in processedPayload) {
+            insertValues.deletedAt = processedPayload.deletedAt;
+          }
+
+          await db.insert(tableSchema).values(insertValues);
+
+          const [newRecord] = await db
+            .select()
+            .from(tableSchema)
+            .where(and(eq(tableSchema.id, entityId), eq(tableSchema.orgId, orgId)))
+            .limit(1);
+
+          await db.insert(schema.syncIdempotencyKeys).values({
+            idempotencyKey,
+            orgId,
+            entityType,
+            entityId,
+            status: "success",
+            serverConfirmedRecord: newRecord,
+            createdAt: now,
+            expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+          });
+
+          results.push({
+            idempotencyKey,
+            status: "success",
+            serverConfirmedRecord: newRecord,
+          });
+        }
+      }
+    } catch (err: any) {
+      await db.insert(schema.syncIdempotencyKeys).values({
+        idempotencyKey,
+        orgId,
+        entityType,
+        entityId,
+        status: "error",
+        serverConfirmedRecord: null,
+        createdAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+      });
+
+      results.push({
+        idempotencyKey,
+        status: "error",
+        serverConfirmedRecord: undefined,
+      });
+    }
   }
 
-  return c.json({ results });
+  const response: SyncPushResponse = { results };
+  if (isEncrypted && dek) {
+    const encryptedResponse = await encryptPayload(dek, response);
+    return c.json({ encrypted: encryptedResponse });
+  }
+
+  return c.json(response);
 });
 
 app.get("/pull", async (c) => {
   const db = createDb(c.env.DATABASE_URL as string);
   const orgId = c.get("orgId");
+  const kekBase64 = c.env.KEK as string;
   const since = c.req.query("since");
 
   if (!since) {
     return c.json({ error: "Missing 'since' query parameter" }, 400);
+  }
+
+  const isEncrypted = c.req.header("X-Sync-Encrypted") === "true";
+  const allowPlaintext = c.env.SYNC_ALLOW_PLAINTEXT === "true";
+
+  if (!isEncrypted && !allowPlaintext) {
+    return c.json({ error: "Encryption required. Missing X-Sync-Encrypted header." }, 400);
+  }
+
+  const dek = isEncrypted ? await getDekFromHeader(c, db, orgId, kekBase64) : null;
+
+  if (isEncrypted && !dek) {
+    return c.json({ error: "No valid DEK found for encrypted payload" }, 401);
   }
 
   const sinceDate = new Date(since);
@@ -138,14 +618,49 @@ app.get("/pull", async (c) => {
       const result = await db
         .select()
         .from(table)
-        .where(and(eq(table.orgId, orgId), gt(table.updatedAt, sinceDate.toISOString())));
+        .where(
+          and(
+            eq(table.orgId, orgId),
+            gte(table.updatedAt, sinceDate.toISOString())
+          )
+        );
       pullData[name] = result;
     } catch {
       pullData[name] = [];
     }
   }
 
-  return c.json(pullData);
+  const response = {
+    timestamp: new Date().toISOString(),
+    data: pullData,
+  };
+
+  if (isEncrypted && dek) {
+    const encryptedResponse = await encryptPayload(dek, response);
+    return c.json({ encrypted: encryptedResponse });
+  }
+
+  return c.json(response);
 });
+
+interface SyncOperation {
+  idempotencyKey: string;
+  entityType: string;
+  entityId: string;
+  operation: string;
+  payload?: any;
+  encryptedPayload?: string;
+  localTimestamp: string | number;
+}
+
+interface SyncPushResult {
+  idempotencyKey: string;
+  status: string;
+  serverConfirmedRecord?: any;
+}
+
+interface SyncPushResponse {
+  results: SyncPushResult[];
+}
 
 export default app;

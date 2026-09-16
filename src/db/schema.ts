@@ -20,6 +20,8 @@ export const students = pgTable("students", {
   notes: text("notes"),
   status: varchar("status", { length: 50 }).default("active"),
   publicLookupToken: text("public_lookup_token"),
+  discountType: varchar("discount_type", { length: 50 }).notNull().default("none"),
+  discountValue: integer("discount_value").notNull().default(0),
 }, (table) => ({
   orgIdIdx: index("students_org_id_idx").on(table.orgId),
   publicLookupTokenIdx: index("students_public_lookup_token_idx").on(table.publicLookupToken),
@@ -362,11 +364,11 @@ export const monthlySubscriptions = pgTable("monthly_subscriptions", {
 
   studentId: text("student_id").notNull(),
   courseId: text("course_id").notNull(),
-  month: integer("month").notNull(),
-  year: integer("year").notNull(),
-  amountTotal: integer("amount_total").notNull().default(0),
-  amountPaid: integer("amount_paid").notNull().default(0),
+  startDate: varchar("start_date", { length: 50 }).notNull(),
+  endDate: varchar("end_date", { length: 50 }).notNull(),
+  amount: integer("amount").notNull().default(0),
   status: varchar("status", { length: 50 }).notNull().default("partial"),
+  paymentMethod: varchar("payment_method", { length: 50 }).notNull().default("cash"),
   notes: text("notes"),
 }, (table) => ({
   orgIdIdx: index("monthly_subscriptions_org_id_idx").on(table.orgId),

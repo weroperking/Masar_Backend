@@ -8,6 +8,18 @@ import type { EffectiveSubscription } from "./subscriptions";
 
 type NewRecord = Record<string, any>;
 
+function toCamelCase(str: string): string {
+  return str.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
+}
+
+function normalizeKeys(obj: Record<string, any>): Record<string, any> {
+  const out: Record<string, any> = {};
+  for (const key of Object.keys(obj)) {
+    out[toCamelCase(key)] = obj[key];
+  }
+  return out;
+}
+
 export function createCrudRouter(
   plural: string,
   singular: string,
@@ -70,8 +82,9 @@ export function createCrudRouter(
       }
     }
 
+    const normalized = normalizeKeys(body);
     const record = {
-      ...body,
+      ...normalized,
       id: globalThis.crypto.randomUUID(),
       orgId,
       updatedAt: new Date().toISOString(),
@@ -98,9 +111,10 @@ export function createCrudRouter(
     const orgId = c.get("orgId") as string;
     const id = c.req.param("id");
     const body = await c.req.json<Partial<NewRecord>>();
+    const normalized = normalizeKeys(body);
     const result = await db
       .update(table)
-      .set({ ...body, updatedAt: new Date().toISOString() })
+      .set({ ...normalized, updatedAt: new Date().toISOString() })
       .where(and(eq((table as any).id, id), eq((table as any).orgId, orgId)))
       .returning();
     if (result.length === 0) return c.json({ error: `${singular} not found` }, 404);

@@ -11,6 +11,7 @@ import webhooks from "./routes/webhooks";
 import billing from "./routes/billing";
 import orgs from "./routes/orgs";
 import admin from "./routes/admin";
+import monthlySubscriptions from "./routes/monthly-subscriptions";
 import { createAuthMiddleware } from "./middleware/auth";
 import { createRequireActiveSubscription, createRequireFeature } from "./middleware/subscription";
 import { createAdminMiddleware } from "./middleware/admin";
@@ -95,7 +96,7 @@ app.route("/api/users", createCrudRouter("users", "user", schema.users));
 app.route("/api/message-templates", createCrudRouter("messageTemplates", "messageTemplate", schema.messageTemplates));
 app.route("/api/settings", createCrudRouter("settings", "setting", schema.settings));
 app.route("/api/qr-cards", createCrudRouter("qrCards", "qrCard", schema.qrCards));
-app.route("/api/monthly-subscriptions", createCrudRouter("monthlySubscriptions", "monthlySubscription", schema.monthlySubscriptions));
+app.route("/api/monthly-subscriptions", monthlySubscriptions);
 app.route("/api/enrollments", createCrudRouter("enrollments", "enrollment", schema.enrollments));
 
 // Tenant-facing org routes — auth + active subscription required

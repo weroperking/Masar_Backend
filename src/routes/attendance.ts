@@ -242,4 +242,38 @@ app.delete("/records/:id", async (c) => {
   return c.json({ success: true });
 });
 
+app.post("/fix-scheduled", async (c) => {
+  const db = createDb(c.env.DATABASE_URL as string);
+  const orgId = c.get("orgId") as string;
+  const now = new Date().toISOString();
+
+  const dueGroups = await db
+    .select()
+    .from(schema.groups)
+    .where(
+      and(
+        eq(schema.groups.orgId, orgId),
+        eq(schema.groups.status, "scheduled"),
+        sql`${schema.groups.startTime} IS NOT NULL`,
+        sql`${schema.groups.startTime} <= ${now}`,
+      ),
+    );
+
+  const updatedGroups: { id: string; name: string }[] = [];
+
+  for (const group of dueGroups) {
+    const [updated] = await db
+      .update(schema.groups)
+      .set({ status: "active", updatedAt: now })
+      .where(eq(schema.groups.id, group.id))
+      .returning();
+
+    if (updated) {
+      updatedGroups.push({ id: updated.id, name: updated.name });
+    }
+  }
+
+  return c.json({ updated: updatedGroups.length, groups: updatedGroups });
+});
+
 export default app;

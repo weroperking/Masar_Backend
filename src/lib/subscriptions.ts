@@ -45,7 +45,8 @@ export async function getSubscription(
 				trialEndsAt,
 				createdAt: now,
 				updatedAt: now,
-			});
+			})
+			.onConflictDoNothing({ target: schema.subscriptions.orgId });
 
 		result = await db
 			.select()

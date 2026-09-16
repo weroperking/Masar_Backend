@@ -1,4 +1,5 @@
-import { Context, MiddlewareHandler } from "hono";
+import type { MiddlewareHandler } from "hono";
+import type { AppEnv } from "../types";
 import { jwtVerify } from "jose";
 
 export interface AuthContext {
@@ -10,12 +11,12 @@ const jwksCache: { keys: any[] } | null = null;
 
 async function getClerkJwks(issuer: string) {
   const res = await fetch(`${issuer}/.well-known/jwks.json`);
-  const jwks = await res.json();
+  const jwks = await res.json<{ keys: (JsonWebKey & { kid?: string })[] }>();
   return jwks;
 }
 
-export function createAuthMiddleware() {
-  return (async (c: Context, next: () => Promise<void>) => {
+export function createAuthMiddleware(): MiddlewareHandler<AppEnv> {
+  return async (c, next) => {
     const secretKey = c.env.CLERK_SECRET_KEY as string | undefined;
     if (!secretKey) {
       return c.json({ error: "CLERK_SECRET_KEY not configured" }, 500);
@@ -46,7 +47,7 @@ export function createAuthMiddleware() {
         throw new Error("JWK not found");
       }
 
-      const key = await globalThis.crypto.subtle.importKey(
+      const key = await crypto.subtle.importKey(
         "jwk",
         jwk,
         { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
@@ -69,5 +70,5 @@ export function createAuthMiddleware() {
     } catch (err: any) {
       return c.json({ error: "Invalid session token" }, 401);
     }
-  }) as MiddlewareHandler;
+  };
 }

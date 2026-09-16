@@ -2,7 +2,9 @@ import { Hono } from "hono";
 import { createDb, schema } from "../db";
 import { verifyWebhook } from "@clerk/backend/webhooks";
 
-const app = new Hono<{ Bindings: CloudflareBindings }>();
+import type { AppEnv } from "../types";
+
+const app = new Hono<AppEnv>();
 
 app.post("/clerk", async (c) => {
 	const signingSecret = c.env.CLERK_WEBHOOK_SIGNING_SECRET as string;
@@ -30,7 +32,7 @@ app.post("/clerk", async (c) => {
 			await db
 				.insert(schema.subscriptions)
 				.values({
-					id: globalThis.crypto.randomUUID(),
+					id: crypto.randomUUID(),
 					orgId,
 					name,
 					plan: "trial",

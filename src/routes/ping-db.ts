@@ -1,7 +1,9 @@
 import { Hono } from "hono";
 import { neon } from "@neondatabase/serverless";
 
-const app = new Hono();
+import type { AppEnv } from "../types";
+
+const app = new Hono<AppEnv>();
 
 app.get("/ping-db", async (c) => {
   const databaseUrl = c.env.DATABASE_URL as string | undefined;

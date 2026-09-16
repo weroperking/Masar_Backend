@@ -2,7 +2,9 @@ import { Hono } from "hono";
 import { createDb, schema } from "../db";
 import { eq, and, isNull, inArray, sql } from "drizzle-orm";
 
-const app = new Hono<{ Bindings: CloudflareBindings }>();
+import type { AppEnv } from "../types";
+
+const app = new Hono<AppEnv>();
 
 app.get("/sessions", async (c) => {
   const db = createDb(c.env.DATABASE_URL as string);
@@ -33,7 +35,7 @@ app.post("/sessions", async (c) => {
   const [session] = await db
     .insert(schema.attendanceSessions)
     .values({
-      id: globalThis.crypto.randomUUID(),
+      id: crypto.randomUUID(),
       orgId,
       groupId: body.groupId,
       courseId: body.courseId,
@@ -159,7 +161,7 @@ app.post("/sessions/:sessionId/records/batch", async (c) => {
       results.push({ studentId: record.studentId, status: record.status, action: "updated" });
     } else {
       await db.insert(schema.attendanceRecords).values({
-        id: globalThis.crypto.randomUUID(),
+        id: crypto.randomUUID(),
         orgId,
         sessionId,
         studentId: record.studentId,
@@ -191,7 +193,7 @@ app.post("/records", async (c) => {
   const [record] = await db
     .insert(schema.attendanceRecords)
     .values({
-      id: globalThis.crypto.randomUUID(),
+      id: crypto.randomUUID(),
       orgId,
       sessionId: body.sessionId,
       studentId: body.studentId,

@@ -3,7 +3,9 @@ import { getSubscription } from "../lib/subscriptions";
 import { PLAN_LIMITS } from "../config/plans";
 import type { PlanKey } from "../config/plans";
 
-const app = new Hono<{ Bindings: CloudflareBindings }>();
+import type { AppEnv } from "../types";
+
+const app = new Hono<AppEnv>();
 
 app.get("/", (c) => {
   const userId = c.get("userId");

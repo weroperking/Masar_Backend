@@ -20,7 +20,9 @@ import { createDb, schema } from "./db";
 import qrCardsApp from "./routes/qr-cards";
 import { processDueLessons } from "./routes/attendance";
 
-const app = new Hono<{ Bindings: CloudflareBindings }>();
+import type { AppEnv } from "./types";
+
+const app = new Hono<AppEnv>();
 const auth = createAuthMiddleware();
 const requireActiveSubscription = createRequireActiveSubscription();
 const requireInventorySalesFeature = createRequireFeature("inventory_sales");

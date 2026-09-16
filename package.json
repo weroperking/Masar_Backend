@@ -3,6 +3,7 @@
   "type": "module",
   "scripts": {
     "dev": "wrangler dev",
+    "typecheck": "tsc --noEmit",
     "deploy": "wrangler deploy --minify",
     "cf-typegen": "wrangler types --env-interface CloudflareBindings"
   },
@@ -16,6 +17,7 @@
   "devDependencies": {
     "@types/node": "^26.4.1",
     "drizzle-orm": "^0.45.2",
+    "typescript": "^5.9.3",
     "wrangler": "^4.129.0"
   }
 }

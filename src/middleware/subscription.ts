@@ -1,10 +1,11 @@
-import type { Context, MiddlewareHandler } from "hono";
+import type { MiddlewareHandler } from "hono";
+import type { AppEnv } from "../types";
 import { getSubscription, isSubscriptionActive, type EffectiveSubscription } from "../lib/subscriptions";
 import { PLAN_LIMITS } from "../config/plans";
 import type { PlanKey, FeatureKey } from "../config/plans";
 
-export function createRequireActiveSubscription() {
-	return (async (c: Context, next: () => Promise<void>) => {
+export function createRequireActiveSubscription(): MiddlewareHandler<AppEnv> {
+	return async (c, next) => {
 		const orgId = c.get("orgId") as string;
 		const kv = c.env.SUBSCRIPTIONS_KV as KVNamespace;
 		const databaseUrl = c.env.DATABASE_URL as string;
@@ -46,11 +47,11 @@ export function createRequireActiveSubscription() {
 
 		c.set("subscription", subscription);
 		await next();
-	}) as MiddlewareHandler;
+	};
 }
 
-export function createRequireFeature(featureKey: FeatureKey) {
-	return (async (c: Context, next: () => Promise<void>) => {
+export function createRequireFeature(featureKey: FeatureKey): MiddlewareHandler<AppEnv> {
+	return async (c, next) => {
 		const subscription = c.get("subscription") as EffectiveSubscription | undefined;
 
 		if (!subscription) {
@@ -89,5 +90,5 @@ export function createRequireFeature(featureKey: FeatureKey) {
 		}
 
 		await next();
-	}) as MiddlewareHandler;
+	};
 }

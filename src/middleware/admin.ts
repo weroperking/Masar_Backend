@@ -1,7 +1,8 @@
-import type { Context, MiddlewareHandler } from "hono";
+import type { MiddlewareHandler } from "hono";
+import type { AppEnv } from "../types";
 
-export function createAdminMiddleware() {
-  return (async (c: Context, next: () => Promise<void>) => {
+export function createAdminMiddleware(): MiddlewareHandler<AppEnv> {
+  return async (c, next) => {
     const adminSecret = c.env.ADMIN_SECRET as string | undefined;
     if (!adminSecret) {
       return c.json({ error: "Admin secret not configured" }, 500);
@@ -13,5 +14,5 @@ export function createAdminMiddleware() {
     }
 
     await next();
-  }) as MiddlewareHandler;
+  };
 }

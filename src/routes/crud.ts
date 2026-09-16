@@ -1,11 +1,19 @@
 import { Hono } from "hono";
 import { createDb, schema } from "../db";
 import { eq, and, isNull } from "drizzle-orm";
-import { allTables, type TableName } from "../db/schema";
+import type { AppEnv } from "../types";
 
-export function createCrudRoutes(tableName: TableName): Hono<any> {
-  const app = new Hono();
-  const table = allTables[tableName] as any;
+type TableName = {
+  [K in keyof typeof schema]: (typeof schema)[K] extends {
+    id: unknown;
+    orgId: unknown;
+    deletedAt: unknown;
+  } ? K : never;
+}[keyof typeof schema];
+
+export function createCrudRoutes(tableName: TableName): Hono<AppEnv> {
+  const app = new Hono<AppEnv>();
+  const table = schema[tableName];
 
   app.get("/", async (c) => {
     const db = createDb(c.env.DATABASE_URL as string);
@@ -28,7 +36,7 @@ export function createCrudRoutes(tableName: TableName): Hono<any> {
 
     const record = {
       ...entityData,
-      id: globalThis.crypto.randomUUID(),
+      id: crypto.randomUUID(),
       orgId,
       updatedAt: updated_at ?? new Date().toISOString(),
       deletedAt: null,

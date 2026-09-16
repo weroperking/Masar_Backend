@@ -5,7 +5,9 @@ import { createAdminMiddleware } from "../middleware/admin";
 import { PLAN_LIMITS, type PlanKey } from "../config/plans";
 import { getPlanLimits } from "../lib/subscriptions";
 
-const app = new Hono<{ Bindings: CloudflareBindings }>();
+import type { AppEnv } from "../types";
+
+const app = new Hono<AppEnv>();
 
 app.use("/*", createAdminMiddleware());
 
@@ -14,7 +16,7 @@ app.get("/orgs", async (c) => {
   const statusFilter = c.req.query("status");
   const planFilter = c.req.query("plan");
 
-  let proposalsQuery = db.select().from(schema.orgUpgradeProposals);
+  let proposalsQuery = db.select().from(schema.orgUpgradeProposals).$dynamic();
   if (statusFilter) {
     proposalsQuery = proposalsQuery.where(eq(schema.orgUpgradeProposals.status, statusFilter));
   }
@@ -158,7 +160,7 @@ app.get("/proposals", async (c) => {
   const db = createDb(c.env.DATABASE_URL as string);
   const status = c.req.query("status");
 
-  let query = db.select().from(schema.orgUpgradeProposals);
+  let query = db.select().from(schema.orgUpgradeProposals).$dynamic();
   if (status) {
     query = query.where(eq(schema.orgUpgradeProposals.status, status));
   }

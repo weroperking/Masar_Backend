@@ -3,7 +3,9 @@ import { createDb, schema } from "../db";
 import { eq, and, isNull } from "drizzle-orm";
 import { normalizeKeys } from "../lib/crud";
 
-const app = new Hono();
+import type { AppEnv } from "../types";
+
+const app = new Hono<AppEnv>();
 
 app.get("/", async (c) => {
   const db = createDb(c.env.DATABASE_URL as string);
@@ -24,11 +26,11 @@ app.post("/", async (c) => {
   const cardNumber =
     normalized.cardNumber ||
     normalized.card_number ||
-    `QR-${globalThis.crypto.randomUUID().slice(0, 8)}`;
+    `QR-${crypto.randomUUID().slice(0, 8)}`;
 
   const record = {
     ...normalized,
-    id: globalThis.crypto.randomUUID(),
+    id: crypto.randomUUID(),
     orgId,
     cardNumber,
     updatedAt: new Date().toISOString(),

@@ -2,7 +2,9 @@ import { Hono } from "hono";
 import { createDb, schema } from "../db";
 import { eq, and, isNull, sql } from "drizzle-orm";
 
-const app = new Hono<{ Bindings: CloudflareBindings }>();
+import type { AppEnv } from "../types";
+
+const app = new Hono<AppEnv>();
 
 app.get("/", async (c) => {
   const db = createDb(c.env.DATABASE_URL as string);
@@ -72,7 +74,7 @@ app.post("/", async (c) => {
   const [record] = await db
     .insert(schema.monthlySubscriptions)
     .values({
-      id: globalThis.crypto.randomUUID(),
+      id: crypto.randomUUID(),
       orgId,
       studentId: body.studentId,
       courseId: body.courseId,

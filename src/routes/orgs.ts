@@ -2,7 +2,9 @@ import { Hono } from "hono";
 import { createDb, schema } from "../db";
 import { eq, and, desc, isNull } from "drizzle-orm";
 
-const app = new Hono<{ Bindings: CloudflareBindings }>();
+import type { AppEnv } from "../types";
+
+const app = new Hono<AppEnv>();
 
 app.post("/:id/upgrade-proposal", async (c) => {
   const orgId = c.get("orgId") as string;
@@ -51,7 +53,7 @@ app.post("/:id/upgrade-proposal", async (c) => {
   const [proposal] = await db
     .insert(schema.orgUpgradeProposals)
     .values({
-      id: globalThis.crypto.randomUUID(),
+      id: crypto.randomUUID(),
       orgId,
       requestedPlan,
       currentPlan,

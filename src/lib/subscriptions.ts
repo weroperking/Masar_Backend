@@ -37,7 +37,7 @@ export async function getSubscription(
 		await db
 			.insert(schema.subscriptions)
 			.values({
-				id: globalThis.crypto.randomUUID(),
+				id: crypto.randomUUID(),
 				orgId,
 				plan: "trial",
 				status: "trialing",

@@ -6,7 +6,9 @@ import { PLAN_LIMITS } from "../config/plans";
 import type { PlanKey } from "../config/plans";
 import type { EffectiveSubscription } from "../lib/subscriptions";
 
-const app = new Hono();
+import type { AppEnv } from "../types";
+
+const app = new Hono<AppEnv>();
 
 app.get("/", async (c) => {
   const db = createDb(c.env.DATABASE_URL as string);
@@ -55,7 +57,7 @@ app.post("/", async (c) => {
 
   const student = {
     ...body,
-    id: globalThis.crypto.randomUUID(),
+    id: crypto.randomUUID(),
     orgId,
     updatedAt: new Date().toISOString(),
   };
@@ -134,7 +136,7 @@ app.post("/:id/lookup-token", async (c) => {
     return c.json({ error: "Student not found" }, 404);
   }
 
-  const token = globalThis.crypto.randomUUID();
+  const token = crypto.randomUUID();
   const now = new Date().toISOString();
 
   const result = await db

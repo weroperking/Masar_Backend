@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import type { AppEnv } from "../types";
 import { createDb, schema } from "../db";
 import { eq, and, isNull, sql } from "drizzle-orm";
 import type { PgTable } from "drizzle-orm/pg-core";
@@ -31,7 +32,7 @@ export function createCrudRouter(
     };
   }
 ) {
-  const app = new Hono();
+  const app = new Hono<AppEnv>();
 
   app.get("/", async (c) => {
     const db = createDb(c.env.DATABASE_URL as string);
@@ -85,7 +86,7 @@ export function createCrudRouter(
     const normalized = normalizeKeys(body);
     const record = {
       ...normalized,
-      id: globalThis.crypto.randomUUID(),
+      id: crypto.randomUUID(),
       orgId,
       updatedAt: new Date().toISOString(),
       createdAt: new Date().toISOString(),

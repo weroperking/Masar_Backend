@@ -3,7 +3,9 @@ import { createDb, schema } from "../db";
 import { eq } from "drizzle-orm";
 import { invalidateSubscriptionCache } from "../lib/subscriptions";
 
-const app = new Hono<{ Bindings: CloudflareBindings }>();
+import type { AppEnv } from "../types";
+
+const app = new Hono<AppEnv>();
 
 app.post("/upgrade", async (c) => {
 	const orgId = c.get("orgId") as string;
@@ -35,7 +37,7 @@ app.post("/upgrade", async (c) => {
 		await db
 			.insert(schema.subscriptions)
 			.values({
-				id: globalThis.crypto.randomUUID(),
+				id: crypto.randomUUID(),
 				orgId,
 				plan,
 				status: "active",

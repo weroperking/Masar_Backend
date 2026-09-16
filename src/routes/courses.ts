@@ -3,7 +3,9 @@ import { createDb, schema } from "../db";
 import { eq, and, isNull } from "drizzle-orm";
 import type { Course, NewCourse } from "../db/schema";
 
-const app = new Hono();
+import type { AppEnv } from "../types";
+
+const app = new Hono<AppEnv>();
 
 app.get("/", async (c) => {
   const db = createDb(c.env.DATABASE_URL as string);
@@ -24,7 +26,7 @@ app.post("/", async (c) => {
 
   const course = {
     ...body,
-    id: globalThis.crypto.randomUUID(),
+    id: crypto.randomUUID(),
     orgId,
     updatedAt: new Date().toISOString(),
   };

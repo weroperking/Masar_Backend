@@ -1,8 +1,9 @@
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
+import type { AppEnv } from "../types";
 import { createDb, schema } from "../db";
 import { eq, and, gte } from "drizzle-orm";
 
-const app = new Hono();
+const app = new Hono<AppEnv>();
 
 const tenantTables: Record<string, any> = {
   students: schema.students,
@@ -30,7 +31,7 @@ const tenantTables: Record<string, any> = {
 };
 
 function encodeBase64(data: Uint8Array | ArrayBufferLike): string {
-  const bytes = new Uint8Array(data);
+  const bytes = data instanceof Uint8Array ? data : new Uint8Array(data);
   let binary = "";
   for (let i = 0; i < bytes.length; i++) {
     binary += String.fromCharCode(bytes[i]);
@@ -69,7 +70,7 @@ async function encryptDekAtRest(kekBase64: string, dek: Uint8Array): Promise<str
   const kekKey = await getKekKey(kekBase64);
   const iv = crypto.getRandomValues(new Uint8Array(16));
   const encrypted = await crypto.subtle.encrypt(
-    { name: "AES-CTR", counter: iv, blockLength: 128 },
+    { name: "AES-CTR", counter: iv, length: 128 },
     kekKey,
     dek
   );
@@ -88,7 +89,7 @@ async function decryptDekAtRest(kekBase64: string, encryptedDek: string): Promis
 
   const kekKey = await getKekKey(kekBase64);
   const decrypted = await crypto.subtle.decrypt(
-    { name: "AES-CTR", counter: iv, blockLength: 128 },
+    { name: "AES-CTR", counter: iv, length: 128 },
     kekKey,
     ciphertext
   );
@@ -172,7 +173,7 @@ async function getOrStoreDeviceKey(
 }
 
 async function getDekFromHeader(
-  c: any,
+  c: Context<AppEnv>,
   db: ReturnType<typeof createDb>,
   orgId: string,
   kekBase64: string
@@ -182,7 +183,7 @@ async function getDekFromHeader(
 
   let publicKeyHash: string;
   try {
-    const authData = JSON.parse(decodeBase64(authHeader));
+    const authData = JSON.parse(new TextDecoder().decode(decodeBase64(authHeader)));
     publicKeyHash = authData.publicKeyHash;
   } catch {
     return null;

@@ -3,7 +3,9 @@ import { createDb, schema } from "../db";
 import { eq, and, isNull, sql } from "drizzle-orm";
 import { cors } from "hono/cors";
 
-const app = new Hono();
+import type { AppEnv } from "../types";
+
+const app = new Hono<AppEnv>();
 
 app.use("/*", cors({ origin: ["https://masar.top", "https://app.masar.top"] }));
 
@@ -96,8 +98,8 @@ app.get("/lookup/:token", async (c) => {
       ),
   ]);
 
-  const subscriptionStatus = subscriptionResult.length > 0
-    ? subscriptionResult[0].status
+  const subscriptionStatus = subscriptionResult.rows.length > 0
+    ? subscriptionResult.rows[0].status
     : "no_record";
 
   return c.json({

@@ -311,7 +311,8 @@ app.post("/handshake", async (c) => {
       algorithm: "RSA-OAEP",
     });
   } catch (err: any) {
-    return c.json({ error: `Handshake failed: ${err.message}` }, 400);
+    console.error("[sync/handshake] error", err);
+    return c.json({ error: "Handshake failed" }, 500);
   }
 });
 
@@ -331,7 +332,7 @@ app.post("/push", async (c) => {
   const dek = isEncrypted ? await getDekFromHeader(c, db, orgId, kekBase64) : null;
 
   if (isEncrypted && !dek) {
-    return c.json({ error: "No valid DEK found for encrypted payload" }, 401);
+    return c.json({ error: "No valid DEK found for encrypted payload" }, 409);
   }
 
   const results: SyncPushResult[] = [];
@@ -607,7 +608,7 @@ app.get("/pull", async (c) => {
   const dek = isEncrypted ? await getDekFromHeader(c, db, orgId, kekBase64) : null;
 
   if (isEncrypted && !dek) {
-    return c.json({ error: "No valid DEK found for encrypted payload" }, 401);
+    return c.json({ error: "No valid DEK found for encrypted payload" }, 409);
   }
 
   const sinceDate = new Date(since);

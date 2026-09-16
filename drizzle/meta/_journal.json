@@ -57,6 +57,13 @@
       "when": 1789400149985,
       "tag": "0007_shocking_zarda",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1789594497000,
+      "tag": "0008_sparkling_dawn",
+      "breakpoints": true
     }
   ]
 }

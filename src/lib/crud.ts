@@ -12,7 +12,7 @@ function toCamelCase(str: string): string {
   return str.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
 }
 
-function normalizeKeys(obj: Record<string, any>): Record<string, any> {
+export function normalizeKeys(obj: Record<string, any>): Record<string, any> {
   const out: Record<string, any> = {};
   for (const key of Object.keys(obj)) {
     out[toCamelCase(key)] = obj[key];

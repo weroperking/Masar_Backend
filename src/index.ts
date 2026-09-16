@@ -17,6 +17,8 @@ import { createRequireActiveSubscription, createRequireFeature } from "./middlew
 import { createAdminMiddleware } from "./middleware/admin";
 import { createCrudRouter } from "./lib/crud";
 import { createDb, schema } from "./db";
+import qrCardsApp from "./routes/qr-cards";
+import { processDueLessons } from "./routes/attendance";
 
 const app = new Hono<{ Bindings: CloudflareBindings }>();
 const auth = createAuthMiddleware();
@@ -95,7 +97,7 @@ app.route("/api/events", createCrudRouter("events", "event", schema.events));
 app.route("/api/users", createCrudRouter("users", "user", schema.users));
 app.route("/api/message-templates", createCrudRouter("messageTemplates", "messageTemplate", schema.messageTemplates));
 app.route("/api/settings", createCrudRouter("settings", "setting", schema.settings));
-app.route("/api/qr-cards", createCrudRouter("qrCards", "qrCard", schema.qrCards));
+app.route("/api/qr-cards", qrCardsApp);
 app.route("/api/monthly-subscriptions", monthlySubscriptions);
 app.route("/api/enrollments", createCrudRouter("enrollments", "enrollment", schema.enrollments));
 
@@ -109,4 +111,16 @@ app.route("/api/orgs", orgs);
 app.use("/admin/*", createAdminMiddleware());
 app.route("/admin", admin);
 
-export default app;
+export default {
+  fetch: app.fetch,
+  scheduled: async (event: any, env: CloudflareBindings, ctx: ExecutionContext) => {
+    const db = createDb(env.DATABASE_URL as string);
+    const subscriptions = await db.select({ orgId: schema.subscriptions.orgId }).from(schema.subscriptions);
+    const results: { orgId: string; updated: number }[] = [];
+    for (const sub of subscriptions) {
+      const updatedGroups = await processDueLessons(db, sub.orgId);
+      results.push({ orgId: sub.orgId, updated: updatedGroups.length });
+    }
+    console.log("Scheduled lesson fix:", JSON.stringify(results));
+  },
+};

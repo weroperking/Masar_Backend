@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { createDb, schema } from "../db";
-import { eq, and, isNull, inArray } from "drizzle-orm";
+import { eq, and, isNull, inArray, sql } from "drizzle-orm";
 
 const app = new Hono<{ Bindings: CloudflareBindings }>();
 
@@ -254,8 +254,9 @@ app.post("/fix-scheduled", async (c) => {
       and(
         eq(schema.groups.orgId, orgId),
         eq(schema.groups.status, "scheduled"),
+        sql`${schema.groups.startDate} IS NOT NULL`,
         sql`${schema.groups.startTime} IS NOT NULL`,
-        sql`${schema.groups.startTime} <= ${now}`,
+        sql`(${schema.groups.startDate} || ' ' || ${schema.groups.startTime})::timestamp <= now()`,
       ),
     );
 
@@ -275,5 +276,38 @@ app.post("/fix-scheduled", async (c) => {
 
   return c.json({ updated: updatedGroups.length, groups: updatedGroups });
 });
+
+export async function processDueLessons(db: ReturnType<typeof createDb>, orgId: string, now?: string) {
+  const nowStr = now || new Date().toISOString();
+
+  const dueGroups = await db
+    .select()
+    .from(schema.groups)
+    .where(
+      and(
+        eq(schema.groups.orgId, orgId),
+        eq(schema.groups.status, "scheduled"),
+        sql`${schema.groups.startDate} IS NOT NULL`,
+        sql`${schema.groups.startTime} IS NOT NULL`,
+        sql`(${schema.groups.startDate} || ' ' || ${schema.groups.startTime})::timestamp <= now()`,
+      ),
+    );
+
+  const updatedGroups: { id: string; name: string }[] = [];
+
+  for (const group of dueGroups) {
+    const [updated] = await db
+      .update(schema.groups)
+      .set({ status: "active", updatedAt: nowStr })
+      .where(eq(schema.groups.id, group.id))
+      .returning();
+
+    if (updated) {
+      updatedGroups.push({ id: updated.id, name: updated.name });
+    }
+  }
+
+  return updatedGroups;
+}
 
 export default app;

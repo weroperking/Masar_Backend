@@ -71,14 +71,46 @@ app.post("/push", async (c) => {
           recordResults.push({ id, status: "skipped" });
         }
       } else {
-        await db.insert(tableSchema).values({
+        const insertValues: Record<string, any> = {
           ...data,
           id,
           orgId,
           updatedAt: updatedAtStr,
           deletedAt: deletedAtStr,
           createdAt: updatedAtStr,
-        });
+        };
+
+        if (table === "monthlySubscriptions") {
+          const sid = data.studentId || data.student_id;
+          const cid = data.courseId || data.course_id;
+          if (sid && cid) {
+            const [student] = await db
+              .select({
+                discountType: schema.students.discountType,
+                discountValue: schema.students.discountValue,
+              })
+              .from(schema.students)
+              .where(and(eq(schema.students.id, sid), eq(schema.students.orgId, orgId)))
+              .limit(1);
+
+            const [course] = await db
+              .select({ price: schema.courses.price })
+              .from(schema.courses)
+              .where(and(eq(schema.courses.id, cid), eq(schema.courses.orgId, orgId)))
+              .limit(1);
+
+            const basePrice = Number(course?.price || 0);
+            let amount = basePrice;
+            if (student?.discountType === "percentage" && student?.discountValue > 0) {
+              amount = Math.round(basePrice * (1 - student.discountValue / 100));
+            } else if (student?.discountType === "fixed" && student?.discountValue > 0) {
+              amount = Math.max(0, basePrice - student.discountValue);
+            }
+            insertValues.amount = amount;
+          }
+        }
+
+        await db.insert(tableSchema).values(insertValues);
         recordResults.push({ id, status: "created" });
       }
     }

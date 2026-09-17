@@ -45,7 +45,9 @@ export function createCrudRouter(
   });
 
   app.post("/", async (c) => {
+    const t0 = Date.now();
     const db = createDb(c.env.DATABASE_URL as string);
+    const t1 = Date.now();
     const orgId = c.get("orgId") as string;
     const body = await c.req.json<NewRecord>();
 
@@ -92,6 +94,8 @@ export function createCrudRouter(
       createdAt: new Date().toISOString(),
     };
     const result = await db.insert(table).values(record).returning();
+    const t2 = Date.now();
+    console.log(`[perf] ${singular}_create db_connect=${t1-t0}ms insert=${t2-t1}ms route=${c.req.url}`);
     return c.json({ [singular]: result[0] }, 201);
   });
 

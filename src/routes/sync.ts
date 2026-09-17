@@ -445,6 +445,36 @@ app.post("/push", async (c) => {
           const incomingUpdatedAt = new Date(localTimestamp).getTime();
 
           if (incomingUpdatedAt > existingUpdatedAt) {
+            if (entityType === "monthlySubscriptions") {
+              const sid = processedPayload.studentId || processedPayload.student_id;
+              const cid = processedPayload.courseId || processedPayload.course_id;
+              if (sid && cid) {
+                const [student] = await db
+                  .select({
+                    discountType: schema.students.discountType,
+                    discountValue: schema.students.discountValue,
+                  })
+                  .from(schema.students)
+                  .where(and(eq(schema.students.id, sid), eq(schema.students.orgId, orgId)))
+                  .limit(1);
+
+                const [course] = await db
+                  .select({ price: schema.courses.price })
+                  .from(schema.courses)
+                  .where(and(eq(schema.courses.id, cid), eq(schema.courses.orgId, orgId)))
+                  .limit(1);
+
+                const basePrice = Number(course?.price || 0);
+                let amount = basePrice;
+                if (student?.discountType === "percentage" && student?.discountValue > 0) {
+                  amount = Math.round(basePrice * (1 - student.discountValue / 100));
+                } else if (student?.discountType === "fixed" && student?.discountValue > 0) {
+                  amount = Math.max(0, basePrice - student.discountValue);
+                }
+                sanitizedData.amount = amount;
+              }
+            }
+
             await db
               .update(tableSchema)
               .set({ ...sanitizedData, updatedAt: localTimestamp })

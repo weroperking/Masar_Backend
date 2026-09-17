@@ -35,6 +35,9 @@ app.post("/", async (c) => {
     cardNumber,
     updatedAt: new Date().toISOString(),
     createdAt: new Date().toISOString(),
+    ...(normalized.studentId !== undefined && { studentId: normalized.studentId }),
+    ...(normalized.printStatus !== undefined && { printStatus: normalized.printStatus }),
+    ...(normalized.linkedAt !== undefined && { linkedAt: normalized.linkedAt }),
   };
 
   const result = await db.insert(schema.qrCards).values(record).returning();
@@ -62,9 +65,15 @@ app.patch("/:id", async (c) => {
   const body = await c.req.json();
   const normalized = normalizeKeys(body);
 
+  const sanitized: Record<string, any> = {};
+  if (normalized.cardNumber !== undefined) sanitized.cardNumber = normalized.cardNumber;
+  if (normalized.studentId !== undefined) sanitized.studentId = normalized.studentId;
+  if (normalized.printStatus !== undefined) sanitized.printStatus = normalized.printStatus;
+  if (normalized.linkedAt !== undefined) sanitized.linkedAt = normalized.linkedAt;
+
   const result = await db
     .update(schema.qrCards)
-    .set({ ...normalized, updatedAt: new Date().toISOString() })
+    .set({ ...sanitized, updatedAt: new Date().toISOString() })
     .where(and(eq(schema.qrCards.id, id), eq(schema.qrCards.orgId, orgId)))
     .returning();
 

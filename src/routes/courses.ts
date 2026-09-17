@@ -20,7 +20,9 @@ app.get("/", async (c) => {
 });
 
 app.post("/", async (c) => {
+  const t0 = Date.now();
   const db = createDb(c.env.DATABASE_URL as string);
+  const t1 = Date.now();
   const orgId = c.get("orgId");
   const body = await c.req.json<NewCourse>();
 
@@ -32,7 +34,8 @@ app.post("/", async (c) => {
   };
 
   const result = await db.insert(schema.courses).values(course).returning();
-
+  const t2 = Date.now();
+  console.log(`[perf] course_create db_connect=${t1-t0}ms insert=${t2-t1}ms route=${c.req.url}`);
   return c.json({ course: result[0] }, 201);
 });
 

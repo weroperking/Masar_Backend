@@ -134,6 +134,40 @@ app.patch("/:id", async (c) => {
     return c.json({ error: "Monthly subscription not found" }, 404);
   }
 
+  if (body.studentId || body.courseId) {
+    const [student] = await db
+      .select({
+        discountType: schema.students.discountType,
+        discountValue: schema.students.discountValue,
+      })
+      .from(schema.students)
+      .where(and(eq(schema.students.id, updated.studentId), eq(schema.students.orgId, orgId)))
+      .limit(1);
+
+    const [course] = await db
+      .select({ price: schema.courses.price })
+      .from(schema.courses)
+      .where(and(eq(schema.courses.id, updated.courseId), eq(schema.courses.orgId, orgId)))
+      .limit(1);
+
+    const basePrice = Number(course?.price || 0);
+    let amount = basePrice;
+    if (student?.discountType === "percentage" && student?.discountValue > 0) {
+      amount = Math.round(basePrice * (1 - student.discountValue / 100));
+    } else if (student?.discountType === "fixed" && student?.discountValue > 0) {
+      amount = Math.max(0, basePrice - student.discountValue);
+    }
+
+    if (amount !== updated.amount) {
+      const [recalculated] = await db
+        .update(schema.monthlySubscriptions)
+        .set({ amount, updatedAt: new Date().toISOString() })
+        .where(eq(schema.monthlySubscriptions.id, id))
+        .returning();
+      return c.json({ monthlySubscription: recalculated });
+    }
+  }
+
   return c.json({ monthlySubscription: updated });
 });
 

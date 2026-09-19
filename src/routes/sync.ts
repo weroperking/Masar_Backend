@@ -602,10 +602,27 @@ app.post("/push", async (c) => {
         expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
       });
 
+      console.error("[sync/push] rejection", {
+        idempotencyKey: op.idempotencyKey,
+        entityType: op.entityType,
+        entityId: op.entityId,
+        operation: op.operation,
+        payloadKeys: Object.keys(op.payload ?? {}),
+        hasEnvelope: !!op.payload?.envelope,
+        envelopeShape: op.payload?.envelope ? Object.keys(op.payload.envelope) : null,
+        envelopeVersion: op.payload?.envelope?.v,
+        ivLength: op.payload?.envelope?.iv?.length,
+        ctLength: op.payload?.envelope?.ct?.length,
+        errorMessage: err?.message,
+        errorName: err?.name,
+        errorStack: err?.stack,
+      });
+
       results.push({
         idempotencyKey,
         status: "error",
         serverConfirmedRecord: undefined,
+        error: err?.message ?? String(err),
       });
     }
   }
@@ -689,6 +706,7 @@ interface SyncPushResult {
   idempotencyKey: string;
   status: string;
   serverConfirmedRecord?: any;
+  error?: string;
 }
 
 interface SyncPushResponse {

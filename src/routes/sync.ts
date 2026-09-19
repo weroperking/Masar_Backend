@@ -259,6 +259,26 @@ async function decryptPayload(dek: CryptoKey, encryptedData: string): Promise<an
   return JSON.parse(decoded);
 }
 
+async function decryptEnvelope(
+  dek: CryptoKey,
+  envelope: { v: number; iv: string; ct: string }
+): Promise<any> {
+  if (!envelope || !envelope.iv || !envelope.ct) {
+    throw new Error("Invalid envelope: missing iv or ct");
+  }
+  const iv = decodeBase64(envelope.iv);
+  const ct = decodeBase64(envelope.ct);
+
+  const decrypted = await crypto.subtle.decrypt(
+    { name: "AES-GCM", iv },
+    dek,
+    ct
+  );
+
+  const decoded = new TextDecoder().decode(decrypted);
+  return JSON.parse(decoded);
+}
+
 app.post("/handshake", async (c) => {
   const db = createDb(c.env.DATABASE_URL as string);
   const orgId = c.get("orgId");
@@ -367,7 +387,7 @@ app.post("/push", async (c) => {
     let processedPayload = op.payload;
     if (isEncrypted && dek && op.payload?.envelope) {
       try {
-        processedPayload = await decryptPayload(dek, op.payload.envelope);
+        processedPayload = await decryptEnvelope(dek, op.payload.envelope);
       } catch (err) {
         console.error('[sync/push] envelope decrypt failed', {
           idempotencyKey: op.idempotencyKey,

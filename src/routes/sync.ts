@@ -108,7 +108,7 @@ async function getOrCreateOrgDek(
     .where(eq(schema.syncKeys.orgId, orgId))
     .limit(1);
 
-   if (existing.length > 0) {
+  if (existing.length > 0) {
     return decryptDekAtRest(kekBase64, existing[0].dekEncrypted);
   }
 
@@ -259,9 +259,11 @@ async function decryptPayload(dek: CryptoKey, encryptedData: string): Promise<an
   return JSON.parse(decoded);
 }
 
+// NEW: decrypts an envelope object {v, iv, ct} where iv and ct are separate base64 fields.
+// Distinct from decryptPayload which expects a single combined base64 string.
 async function decryptEnvelope(
   dek: CryptoKey,
-  envelope: { v: number; iv: string; ct: string }
+  envelope: { v?: number; iv: string; ct: string }
 ): Promise<any> {
   if (!envelope || !envelope.iv || !envelope.ct) {
     throw new Error("Invalid envelope: missing iv or ct");

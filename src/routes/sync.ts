@@ -349,19 +349,31 @@ app.post("/push", async (c) => {
 
     if (existingIdempotency.length > 0) {
       const record = existingIdempotency[0];
+      const cachedError = record.status === "error" && record.serverConfirmedRecord
+        ? (record.serverConfirmedRecord as any).error
+        : undefined;
+
       results.push({
         idempotencyKey,
         status: record.status,
-        serverConfirmedRecord: record.serverConfirmedRecord || undefined,
+        serverConfirmedRecord: record.status === "success"
+          ? (record.serverConfirmedRecord as any) || undefined
+          : undefined,
+        error: cachedError,
       });
       continue;
     }
 
     let processedPayload = op.payload;
-    if (isEncrypted && dek && op.encryptedPayload) {
+    if (isEncrypted && dek && op.payload?.envelope) {
       try {
-        processedPayload = await decryptPayload(dek, op.encryptedPayload);
-      } catch {
+        processedPayload = await decryptPayload(dek, op.payload.envelope);
+      } catch (err) {
+        console.error('[sync/push] envelope decrypt failed', {
+          idempotencyKey: op.idempotencyKey,
+          entityType: op.entityType,
+          error: err instanceof Error ? err.message : String(err),
+        });
         processedPayload = op.payload;
       }
     }
@@ -384,7 +396,11 @@ app.post("/push", async (c) => {
         createdAt: new Date().toISOString(),
         expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
       });
-      results.push({ idempotencyKey, status });
+      results.push({
+        idempotencyKey,
+        status,
+        error: `Unknown or unsupported entity type: ${entityType}`,
+      });
       continue;
     }
 
@@ -597,7 +613,7 @@ app.post("/push", async (c) => {
         entityType,
         entityId,
         status: "error",
-        serverConfirmedRecord: null,
+        serverConfirmedRecord: { error: err?.message ?? String(err) },
         createdAt: new Date().toISOString(),
         expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
       });

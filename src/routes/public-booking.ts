@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { createDb, schema } from "../db";
-import { eq, and, isNull, sql, inArray } from "drizzle-orm";
+import { eq, and, isNull, sql, or } from "drizzle-orm";
 import { cors } from "hono/cors";
 
 import type { AppEnv } from "../types";
@@ -135,7 +135,7 @@ app.get("/:code", async (c) => {
       .where(and(
         eq(schema.groups.orgId, orgId),
         isNull(schema.groups.deletedAt),
-        inArray(schema.groups.courseId, courseIds),
+        or(...courseIds.map((id) => eq(schema.groups.courseId, id))),
       ));
 
     const groupIds = rawGroups.map((g) => g.id);
@@ -151,7 +151,7 @@ app.get("/:code", async (c) => {
         .where(and(
           eq(schema.enrollments.orgId, orgId),
           isNull(schema.enrollments.deletedAt),
-          inArray(schema.enrollments.groupId, groupIds),
+          or(...groupIds.map((id) => eq(schema.enrollments.groupId, id))),
           eq(schema.enrollments.status, "active"),
         ))
         .groupBy(schema.enrollments.groupId);

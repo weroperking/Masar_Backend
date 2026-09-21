@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { createDb, schema } from "../db";
-import { eq } from "drizzle-orm";
+import { eq, and, isNull, sql, inArray } from "drizzle-orm";
 import { cors } from "hono/cors";
 
 import type { AppEnv } from "../types";
@@ -76,6 +76,102 @@ app.get("/:code", async (c) => {
     return c.json({ error: "Organization not found" }, 404);
   }
 
+  const orgId = subscription.orgId;
+
+  const courseRows = await db
+    .select({
+      id: schema.courses.id,
+      name: schema.courses.name,
+      price: schema.courses.price,
+      paymentType: schema.courses.paymentType,
+      status: schema.courses.status,
+    })
+    .from(schema.courses)
+    .where(and(
+      eq(schema.courses.orgId, orgId),
+      isNull(schema.courses.deletedAt),
+      eq(schema.courses.status, "active"),
+    ));
+
+  const courseIds = courseRows.map((c) => c.id);
+
+  let groupRows: {
+    id: string;
+    courseId: string;
+    name: string;
+    type: string;
+    daysOfWeek: string[];
+    startTime: string | null;
+    endTime: string | null;
+    startDate: string | null;
+    endDate: string | null;
+    sessionCount: number | null;
+    maxStudents: number | null;
+    notes: string | null;
+    room: string | null;
+    status: string | null;
+    availableSlots: number | null;
+  }[] = [];
+
+  if (courseIds.length > 0) {
+    const rawGroups = await db
+      .select({
+        id: schema.groups.id,
+        courseId: schema.groups.courseId,
+        name: schema.groups.name,
+        type: schema.groups.type,
+        daysOfWeek: schema.groups.daysOfWeek,
+        startTime: schema.groups.startTime,
+        endTime: schema.groups.endTime,
+        startDate: schema.groups.startDate,
+        endDate: schema.groups.endDate,
+        sessionCount: schema.groups.sessionCount,
+        maxStudents: schema.groups.maxStudents,
+        notes: schema.groups.notes,
+        room: schema.groups.room,
+        status: schema.groups.status,
+      })
+      .from(schema.groups)
+      .where(and(
+        eq(schema.groups.orgId, orgId),
+        isNull(schema.groups.deletedAt),
+        inArray(schema.groups.courseId, courseIds),
+      ));
+
+    const groupIds = rawGroups.map((g) => g.id);
+
+    let enrollmentCounts = new Map<string, number>();
+    if (groupIds.length > 0) {
+      const enrollmentRows = await db
+        .select({
+          groupId: schema.enrollments.groupId,
+          count: sql<number>`count(*)`.as("count"),
+        })
+        .from(schema.enrollments)
+        .where(and(
+          eq(schema.enrollments.orgId, orgId),
+          isNull(schema.enrollments.deletedAt),
+          inArray(schema.enrollments.groupId, groupIds),
+          eq(schema.enrollments.status, "active"),
+        ))
+        .groupBy(schema.enrollments.groupId);
+
+      for (const row of enrollmentRows) {
+        enrollmentCounts.set(row.groupId, Number(row.count));
+      }
+    }
+
+    groupRows = rawGroups.map((g) => {
+      const enrolled = enrollmentCounts.get(g.id) || 0;
+      const max = g.maxStudents;
+      const availableSlots = max !== null && max !== undefined ? Math.max(0, max - enrolled) : null;
+      return {
+        ...g,
+        availableSlots,
+      };
+    });
+  }
+
   return c.json({
     org_id: subscription.orgId,
     name: subscription.name,
@@ -83,6 +179,8 @@ app.get("/:code", async (c) => {
     status: subscription.status,
     country: subscription.country,
     city: subscription.city,
+    courses: courseRows,
+    groups: groupRows,
   });
 });
 

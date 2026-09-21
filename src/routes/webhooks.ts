@@ -4,6 +4,13 @@ import { verifyWebhook } from "@clerk/backend/webhooks";
 
 import type { AppEnv } from "../types";
 
+function generateBookingCode(): string {
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+  const bytes = new Uint8Array(8);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => chars[b % chars.length]).join("");
+}
+
 const app = new Hono<AppEnv>();
 
 app.post("/clerk", async (c) => {
@@ -26,6 +33,7 @@ app.post("/clerk", async (c) => {
 			const cf = c.req.raw.cf as { country?: string; city?: string } | undefined;
 			const country = cf?.country || null;
 			const city = cf?.city || null;
+			const bookingCode = generateBookingCode();
 
 			const db = createDb(c.env.DATABASE_URL as string);
 
@@ -41,6 +49,7 @@ app.post("/clerk", async (c) => {
 					trialEndsAt,
 					country,
 					city,
+					bookingCode,
 					createdAt: now,
 					updatedAt: now,
 				})
@@ -49,7 +58,7 @@ app.post("/clerk", async (c) => {
 					set: { name, updatedAt: now },
 				});
 
-			return c.json({ received: true, orgId, name, trialStartedAt, trialEndsAt, country, city }, 201);
+			return c.json({ received: true, orgId, name, trialStartedAt, trialEndsAt, country, city, bookingCode }, 201);
 		}
 
 		return c.json({ received: true, eventType: evt.type }, 200);

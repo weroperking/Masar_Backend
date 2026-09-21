@@ -7,6 +7,7 @@ import courses from "./routes/courses";
 import attendance from "./routes/attendance";
 import sync from "./routes/sync";
 import publicLookup from "./routes/public-lookup";
+import publicBooking from "./routes/public-booking";
 import webhooks from "./routes/webhooks";
 import billing from "./routes/billing";
 import orgs from "./routes/orgs";
@@ -36,6 +37,7 @@ app.use("/api/*", cors({ origin: "*" }));
 app.use("/public/*", cors({ origin: "*" }));
 
 app.route("/public", publicLookup);
+app.route("/public/booking", publicBooking);
 app.route("/api", pingDb);
 
 // Webhooks — no auth, raw Clerk-signed payload

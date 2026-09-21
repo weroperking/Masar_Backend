@@ -69,6 +69,7 @@ app.get("/orgs", async (c) => {
       current_period_end: sub.currentPeriodEnd,
       country: sub.country,
       city: sub.city,
+      booking_code: sub.bookingCode,
       created_at: sub.createdAt,
       updated_at: sub.updatedAt,
       student_count: studentMap.get(sub.orgId) || 0,
@@ -118,6 +119,7 @@ app.get("/orgs/:id", async (c) => {
     org: {
       ...subscription,
       name: subscription.name,
+      booking_code: subscription.bookingCode,
       student_count: Number(studentCountRow?.count ?? 0),
       branch_count: Number(branchCountRow?.count ?? 0),
       latest_proposal: proposal || null,

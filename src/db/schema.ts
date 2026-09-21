@@ -480,10 +480,12 @@ export const subscriptions = pgTable("subscriptions", {
   currentPeriodEnd: timestamp("current_period_end", { withTimezone: true, mode: "string" }),
   country: text("country"),
   city: text("city"),
+  bookingCode: text("booking_code").unique(),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull(),
 }, (table) => ({
   orgIdIdx: index("subscriptions_org_id_idx").on(table.orgId),
+  bookingCodeIdx: index("subscriptions_booking_code_idx").on(table.bookingCode),
 }));
 
 export type Subscription = typeof subscriptions.$inferSelect;

@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, uuid, varchar, integer, index, boolean, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, uuid, varchar, integer, index, boolean, jsonb, numeric } from "drizzle-orm/pg-core";
 
 export const students = pgTable("students", {
   id: uuid("id").primaryKey(),
@@ -505,6 +505,20 @@ export const orgUpgradeProposals = pgTable("org_upgrade_proposals", {
   orgIdIdx: index("org_upgrade_proposals_org_id_idx").on(table.orgId),
   statusIdx: index("org_upgrade_proposals_status_idx").on(table.status),
 }));
+
+export const ledgerEntries = pgTable("ledger_entries", {
+  id: text("id").primaryKey(),
+  orgId: text("org_id").notNull(),
+  type: text("type").notNull(),
+  amount: numeric("amount").notNull(),
+  description: text("description"),
+  date: timestamp("date", { withTimezone: true, mode: "string" }).notNull(),
+  relatedType: text("related_type"),
+  relatedId: text("related_id"),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull(),
+  deletedAt: timestamp("deleted_at", { withTimezone: true, mode: "string" }),
+});
 
 export type OrgUpgradeProposal = typeof orgUpgradeProposals.$inferSelect;
 export type NewOrgUpgradeProposal = typeof orgUpgradeProposals.$inferInsert;

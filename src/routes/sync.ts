@@ -19,6 +19,7 @@ const tenantTables: Record<string, any> = {
   revenueEntries: schema.revenueEntries,
   expenseEntries: schema.expenseEntries,
   refundEntries: schema.refundEntries,
+  ledgerEntries: schema.ledgerEntries,
   bookingRequests: schema.bookingRequests,
   productSales: schema.productSales,
   events: schema.events,

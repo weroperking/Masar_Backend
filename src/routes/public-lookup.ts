@@ -22,13 +22,13 @@ function rateLimit(ip: string): boolean {
   return recent.length <= RATE_LIMIT_MAX;
 }
 
-app.get("/lookup/:token", async (c) => {
+app.get("/lookup/:code", async (c) => {
   const ip = c.req.header("CF-Connecting-IP") || c.req.header("X-Forwarded-For") || "unknown";
   if (!rateLimit(ip)) {
     return c.json({ error: "Rate limit exceeded" }, 429);
   }
 
-  const token = c.req.param("token");
+  const token = c.req.param("code");
   const db = createDb(c.env.DATABASE_URL as string);
 
   const studentRows = await db

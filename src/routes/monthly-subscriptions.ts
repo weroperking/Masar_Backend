@@ -135,6 +135,9 @@ app.patch("/:id", async (c) => {
   }
 
   if (body.studentId || body.courseId) {
+    if (!updated.studentId || !updated.courseId) {
+      return c.json({ error: "studentId and courseId are required for discount calculation" }, 400);
+    }
     const [student] = await db
       .select({
         discountType: schema.students.discountType,

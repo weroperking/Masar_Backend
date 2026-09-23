@@ -78,6 +78,13 @@
       "when": 1789700001000,
       "tag": "0010_ledger_entries",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1789700002000,
+      "tag": "0011_sync_entity_columns",
+      "breakpoints": true
     }
   ]
 }

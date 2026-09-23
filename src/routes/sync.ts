@@ -31,6 +31,94 @@ const tenantTables: Record<string, any> = {
   enrollments: schema.enrollments,
 };
 
+/**
+ * Known Drizzle schema JS property names for each entity type.
+ * Used to filter the decrypted payload so we never send
+ * non-existent columns to Postgres.
+ */
+const entityColumns: Record<string, Set<string>> = {
+  qrCards: new Set([
+    "id", "orgId", "updatedAt", "deletedAt", "createdAt",
+    "cardNumber", "studentId", "printStatus", "linkedAt",
+    "qrCodeData", "status", "themeColor", "centerName",
+    "backgroundImage", "notes", "syncStatus",
+  ]),
+  monthlySubscriptions: new Set([
+    "id", "orgId", "updatedAt", "deletedAt", "createdAt",
+    "studentId", "courseId", "month", "year",
+    "amountTotal", "amountPaid", "status", "notes",
+    "startDate", "endDate", "amount", "dueDate",
+    "paymentMethod", "syncStatus",
+  ]),
+};
+
+/** Convert epoch_ms number → ISO string; pass through ISO strings. */
+function toIsoTs(value: unknown): string | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value === "number") return new Date(value).toISOString();
+  if (typeof value === "string") return value;
+  return undefined;
+}
+
+/**
+ * Map a decrypted frontend payload to the Drizzle schema property set for the given entity type.
+ * - Converts epoch_ms timestamps to ISO strings for timestamptz columns.
+ * - Filters out any frontend-only field that has no DB column, logging a warning.
+ * - Maps frontend snake_case / camelCase keys to the schema's camelCase property names.
+ */
+function mapPayloadToColumns(
+  entityType: string,
+  payload: Record<string, any>,
+): Record<string, any> {
+  const knownColumns = entityColumns[entityType];
+  if (!knownColumns) {
+    return {};
+  }
+
+  const result: Record<string, any> = {};
+  const dropped: string[] = [];
+
+  // Fields that are epoch_ms numbers → convert to ISO string for timestamptz columns
+  const epochFields = new Set(["createdAt", "updatedAt", "deletedAt", "linkedAt"]);
+
+  for (const [key, value] of Object.entries(payload)) {
+    // Normalize frontend key (snake_case or camelCase) to camelCase
+    let normalizedKey: string;
+    if (key.includes("_")) {
+      // snake_case → camelCase
+      normalizedKey = key.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
+    } else {
+      normalizedKey = key;
+    }
+
+    // These fields are managed by the sync route itself — skip them
+    if (normalizedKey === "id" || normalizedKey === "orgId" || normalizedKey === "updatedAt") {
+      continue;
+    }
+
+    if (!knownColumns.has(normalizedKey)) {
+      dropped.push(key);
+      continue;
+    }
+
+    if (epochFields.has(normalizedKey)) {
+      result[normalizedKey] = toIsoTs(value);
+    } else if (value === undefined) {
+      continue;
+    } else {
+      result[normalizedKey] = value;
+    }
+  }
+
+  if (dropped.length > 0) {
+    console.warn(`[sync/push] Dropped non-column fields for entityType=${entityType}: ${dropped.join(", ")}`);
+    console.warn(`[sync/push] Full payload keys: ${Object.keys(payload).join(", ")}`);
+    console.warn(`[sync/push] Known schema properties: ${Array.from(knownColumns).join(", ")}`);
+  }
+
+  return result;
+}
+
 function encodeBase64(data: Uint8Array | ArrayBufferLike): string {
   const bytes = data instanceof Uint8Array ? data : new Uint8Array(data);
   let binary = "";
@@ -430,11 +518,12 @@ app.post("/push", async (c) => {
     try {
       const now = new Date().toISOString();
 
-      if (operation === "delete" || (processedPayload as any).deletedAt) {
-        const deletedAt = processedPayload.deletedAt
-          ? (typeof processedPayload.deletedAt === "number"
-            ? new Date(processedPayload.deletedAt).toISOString()
-            : processedPayload.deletedAt)
+      if (operation === "delete" || (processedPayload as any).deleted_at || (processedPayload as any).deletedAt) {
+        const deletedAtRaw = processedPayload.deleted_at ?? processedPayload.deletedAt;
+        const deletedAt = deletedAtRaw
+          ? (typeof deletedAtRaw === "number"
+            ? new Date(deletedAtRaw).toISOString()
+            : deletedAtRaw)
           : localTimestamp;
 
         await db
@@ -472,12 +561,7 @@ app.post("/push", async (c) => {
           .from(tableSchema)
           .where(and(eq(tableSchema.id, entityId), eq(tableSchema.orgId, orgId)));
 
-        const sanitizedData: Record<string, any> = {};
-        for (const [key, value] of Object.entries(processedPayload)) {
-          if (key === "id" || key === "orgId" || key === "org_id" || key === "deletedAt" || key === "updatedAt") continue;
-          const camelKey = key.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
-          sanitizedData[camelKey] = value;
-        }
+        const sanitizedData = mapPayloadToColumns(entityType, processedPayload);
 
         if (existing.length > 0) {
           const existingUpdatedAt = new Date(existing[0].updatedAt).getTime();
@@ -596,11 +680,19 @@ app.post("/push", async (c) => {
             id: entityId,
             orgId,
             updatedAt: localTimestamp,
-            createdAt: processedPayload.createdAt || localTimestamp,
           };
 
-          if ("deletedAt" in processedPayload) {
-            insertValues.deletedAt = processedPayload.deletedAt;
+          // Ensure createdAt and deletedAt are set if not already in sanitizedData
+          if (!insertValues.createdAt) {
+            const createdAt = toIsoTs(processedPayload.created_at || processedPayload.createdAt);
+            if (createdAt) insertValues.createdAt = createdAt;
+          }
+
+          if (!insertValues.deletedAt) {
+            const deletedAtRaw = processedPayload.deleted_at ?? processedPayload.deletedAt;
+            if (deletedAtRaw !== undefined && deletedAtRaw !== null) {
+              insertValues.deletedAt = toIsoTs(deletedAtRaw);
+            }
           }
 
           await db.insert(tableSchema).values(insertValues);

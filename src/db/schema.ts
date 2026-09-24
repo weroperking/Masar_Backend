@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, uuid, varchar, integer, index, boolean, jsonb, numeric } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, uuid, varchar, integer, index, boolean, jsonb, numeric, unique } from "drizzle-orm/pg-core";
 
 export const students = pgTable("students", {
   id: uuid("id").primaryKey(),
@@ -532,6 +532,28 @@ export const ledgerEntries = pgTable("ledger_entries", {
   updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull(),
   deletedAt: timestamp("deleted_at", { withTimezone: true, mode: "string" }),
 });
+
+export const pinConfigs = pgTable("pin_configs", {
+  id: text("id").primaryKey(),
+  orgId: text("org_id").notNull(),
+  profileType: text("profile_type").notNull(),
+  pinHash: text("pin_hash").notNull(),
+  pinSalt: text("pin_salt").notNull(),
+  pinIterations: integer("pin_iterations").notNull().default(210000),
+  pinAlgorithm: text("pin_algorithm").notNull().default("PBKDF2-SHA256"),
+  assistantPinRequired: boolean("assistant_pin_required").notNull().default(false),
+  autoLockMinutes: integer("auto_lock_minutes").notNull().default(15),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull(),
+  deletedAt: timestamp("deleted_at", { withTimezone: true, mode: "string" }),
+}, (table) => ({
+  orgIdIdx: index("pin_configs_org_id_idx").on(table.orgId),
+  updatedAtIdx: index("pin_configs_updated_at_idx").on(table.updatedAt),
+  orgIdProfileTypeUnique: unique("pin_configs_org_id_profile_type_unique").on(table.orgId, table.profileType),
+}));
+
+export type PinConfig = typeof pinConfigs.$inferSelect;
+export type NewPinConfig = typeof pinConfigs.$inferInsert;
 
 export type OrgUpgradeProposal = typeof orgUpgradeProposals.$inferSelect;
 export type NewOrgUpgradeProposal = typeof orgUpgradeProposals.$inferInsert;

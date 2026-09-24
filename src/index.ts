@@ -13,6 +13,7 @@ import billing from "./routes/billing";
 import orgs from "./routes/orgs";
 import admin from "./routes/admin";
 import monthlySubscriptions from "./routes/monthly-subscriptions";
+import pinConfigs from "./routes/pinConfigs";
 import { createAuthMiddleware } from "./middleware/auth";
 import { createRequireActiveSubscription, createRequireFeature } from "./middleware/subscription";
 import { createAdminMiddleware } from "./middleware/admin";
@@ -76,6 +77,7 @@ app.use("/api/settings/*", auth, requireActiveSubscription);
 app.use("/api/qr-cards/*", auth, requireActiveSubscription);
 app.use("/api/monthly-subscriptions/*", auth, requireActiveSubscription);
 app.use("/api/enrollments/*", auth, requireActiveSubscription);
+app.use("/api/pin-configs/*", auth, requireActiveSubscription);
 
 app.route("/api/students", students);
 app.route("/api/courses", courses);
@@ -104,6 +106,7 @@ app.route("/api/settings", createCrudRouter("settings", "setting", schema.settin
 app.route("/api/qr-cards", qrCardsApp);
 app.route("/api/monthly-subscriptions", monthlySubscriptions);
 app.route("/api/enrollments", createCrudRouter("enrollments", "enrollment", schema.enrollments));
+app.route("/api/pin-configs", pinConfigs);
 
 // Tenant-facing org routes — auth + active subscription required
 // Exclude upgrade-proposal paths so expired/trialing orgs can request upgrades

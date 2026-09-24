@@ -29,9 +29,33 @@ const tenantTables: Record<string, any> = {
   qrCards: schema.qrCards,
   monthlySubscriptions: schema.monthlySubscriptions,
   enrollments: schema.enrollments,
-  expenses: schema.expenseEntries,
-  revenues: schema.revenueEntries,
-  refunds: schema.refundEntries,
+  pinConfigs: schema.pinConfigs,
+};
+
+/**
+ * Known Drizzle schema JS property names for each entity type.
+ * Used to filter the decrypted payload so we never send
+ * non-existent columns to Postgres.
+ */
+const entityColumns: Record<string, Set<string>> = {
+  qrCards: new Set([
+    "id", "orgId", "updatedAt", "deletedAt", "createdAt",
+    "cardNumber", "studentId", "printStatus", "linkedAt",
+    "qrCodeData", "status", "themeColor", "centerName",
+    "backgroundImage", "notes", "syncStatus",
+  ]),
+  monthlySubscriptions: new Set([
+    "id", "orgId", "updatedAt", "deletedAt", "createdAt",
+    "studentId", "courseId", "month", "year",
+    "amountTotal", "amountPaid", "status", "notes",
+    "startDate", "endDate", "amount", "dueDate",
+    "paymentMethod", "syncStatus",
+  ]),
+  pinConfigs: new Set([
+    "id", "orgId", "updatedAt", "deletedAt", "createdAt",
+    "profileType", "pinHash", "pinSalt", "pinIterations",
+    "pinAlgorithm", "assistantPinRequired", "autoLockMinutes",
+  ]),
 };
 
 /** Convert epoch_ms number → ISO string; pass through ISO strings. */
@@ -48,32 +72,32 @@ function toIsoTs(value: unknown): string | undefined {
  * - Filters out any frontend-only field that has no DB column, logging a warning.
  * - Maps frontend snake_case / camelCase keys to the schema's camelCase property names.
  */
-/** Derive valid Drizzle property names directly from the schema. */
-function getKnownColumns(entityType: string): Set<string> | null {
-  const table = (tenantTables as Record<string, any>)[entityType];
-  if (!table || !table.columns) return null;
-  return new Set(Object.keys(table.columns));
-}
-
 function mapPayloadToColumns(
   entityType: string,
   payload: Record<string, any>,
 ): Record<string, any> {
-  const knownColumns = getKnownColumns(entityType);
+  const knownColumns = entityColumns[entityType];
   if (!knownColumns) {
-    console.warn(`[sync/push] No schema entry for entityType=${entityType} — dropping payload`);
     return {};
   }
 
   const result: Record<string, any> = {};
   const dropped: string[] = [];
+
+  // Fields that are epoch_ms numbers → convert to ISO string for timestamptz columns
   const epochFields = new Set(["createdAt", "updatedAt", "deletedAt", "linkedAt"]);
 
   for (const [key, value] of Object.entries(payload)) {
-    const normalizedKey = key.includes("_")
-      ? key.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase())
-      : key;
+    // Normalize frontend key (snake_case or camelCase) to camelCase
+    let normalizedKey: string;
+    if (key.includes("_")) {
+      // snake_case → camelCase
+      normalizedKey = key.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
+    } else {
+      normalizedKey = key;
+    }
 
+    // These fields are managed by the sync route itself — skip them
     if (normalizedKey === "id" || normalizedKey === "orgId" || normalizedKey === "updatedAt") {
       continue;
     }
@@ -85,13 +109,17 @@ function mapPayloadToColumns(
 
     if (epochFields.has(normalizedKey)) {
       result[normalizedKey] = toIsoTs(value);
-    } else if (value !== undefined) {
+    } else if (value === undefined) {
+      continue;
+    } else {
       result[normalizedKey] = value;
     }
   }
 
   if (dropped.length > 0) {
     console.warn(`[sync/push] Dropped non-column fields for entityType=${entityType}: ${dropped.join(", ")}`);
+    console.warn(`[sync/push] Full payload keys: ${Object.keys(payload).join(", ")}`);
+    console.warn(`[sync/push] Known schema properties: ${Array.from(knownColumns).join(", ")}`);
   }
 
   return result;
@@ -470,7 +498,7 @@ app.post("/push", async (c) => {
     const entityType = op.entityType;
     const entityId = op.entityId;
     const operation = op.operation;
-    const localTimestamp = new Date(op.localTimestamp).toISOString();
+    const localTimestamp = op.localTimestamp ? new Date(op.localTimestamp).toISOString() : new Date().toISOString();
 
     const tableSchema = tenantTables[entityType];
     if (!tableSchema) {

@@ -29,6 +29,7 @@ const tenantTables: Record<string, any> = {
   qrCards: schema.qrCards,
   monthlySubscriptions: schema.monthlySubscriptions,
   enrollments: schema.enrollments,
+  pinConfigs: schema.pinConfigs,
 };
 
 /**
@@ -49,6 +50,11 @@ const entityColumns: Record<string, Set<string>> = {
     "amountTotal", "amountPaid", "status", "notes",
     "startDate", "endDate", "amount", "dueDate",
     "paymentMethod", "syncStatus",
+  ]),
+  pinConfigs: new Set([
+    "id", "orgId", "updatedAt", "deletedAt", "createdAt",
+    "profileType", "pinHash", "pinSalt", "pinIterations",
+    "pinAlgorithm", "assistantPinRequired", "autoLockMinutes",
   ]),
 };
 

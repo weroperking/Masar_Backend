@@ -66,6 +66,7 @@ app.put("/:profileType", rateLimitMiddleware, async (c) => {
 
   const body = await c.req.json<{
     id: string;
+    profileType?: string;
     pinHash: string;
     pinSalt: string;
     pinIterations?: number;
@@ -74,20 +75,46 @@ app.put("/:profileType", rateLimitMiddleware, async (c) => {
     autoLockMinutes?: number;
     createdAt?: string;
     updatedAt: string;
+    deletedAt?: string | null;
   }>();
 
   if (!body.id || !body.pinHash || !body.pinSalt || !body.updatedAt) {
     return c.json({ error: "missing_fields", missing: ["id", "pinHash", "pinSalt", "updatedAt"].filter((f) => !(body as any)[f]) }, 400);
   }
 
+  // The client PUTs the full row it holds in local state, so `profileType` and
+  // `deletedAt` arrive on every request. Both are now accepted:
+  //  - profileType: validated against the URL param below, never trusted to
+  //    select a different profile than the one addressed.
+  //  - deletedAt: accepted as null (row re-activated) or an ISO timestamp.
+  // Every other unknown key is still rejected — this allowlist is the
+  // mass-assignment guard and is otherwise unchanged.
   const allowedKeys = new Set([
     "id", "pinHash", "pinSalt", "pinIterations", "pinAlgorithm",
     "assistantPinRequired", "autoLockMinutes", "createdAt", "updatedAt",
+    "profileType", "deletedAt",
   ]);
   for (const key of Object.keys(body)) {
     if (!allowedKeys.has(key)) {
       return c.json({ error: `Unknown field: ${key}` }, 400);
     }
+  }
+
+  if (body.profileType !== undefined && body.profileType !== profileType) {
+    return c.json({
+      error: "profile_type_mismatch",
+      expected: profileType,
+      received: body.profileType,
+    }, 400);
+  }
+
+  let deletedAt: string | null = null;
+  if (body.deletedAt !== undefined && body.deletedAt !== null) {
+    const parsed = new Date(body.deletedAt);
+    if (Number.isNaN(parsed.getTime())) {
+      return c.json({ error: "invalid_deleted_at", received: body.deletedAt }, 400);
+    }
+    deletedAt = parsed.toISOString();
   }
 
   const now = new Date().toISOString();
@@ -103,6 +130,7 @@ app.put("/:profileType", rateLimitMiddleware, async (c) => {
     autoLockMinutes: body.autoLockMinutes ?? 15,
     createdAt: body.createdAt ?? now,
     updatedAt: body.updatedAt,
+    deletedAt,
   } as const;
 
   await db
@@ -120,12 +148,23 @@ app.put("/:profileType", rateLimitMiddleware, async (c) => {
         autoLockMinutes: insertData.autoLockMinutes,
         createdAt: insertData.createdAt,
         updatedAt: insertData.updatedAt,
-        deletedAt: null,
+        deletedAt: insertData.deletedAt,
       },
       where: eq(schema.pinConfigs.orgId, c.get("orgId")),
     });
 
-  return c.json({ ok: true });
+  const [persisted] = await db
+    .select()
+    .from(schema.pinConfigs)
+    .where(
+      and(
+        eq(schema.pinConfigs.orgId, orgId),
+        eq(schema.pinConfigs.profileType, profileType)
+      )
+    )
+    .limit(1);
+
+  return c.json({ ok: true, config: persisted ?? null });
 });
 
 app.delete("/:profileType", rateLimitMiddleware, async (c) => {

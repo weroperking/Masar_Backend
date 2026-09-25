@@ -557,6 +557,36 @@ export const pinConfigs = pgTable("pin_configs", {
 export type PinConfig = typeof pinConfigs.$inferSelect;
 export type NewPinConfig = typeof pinConfigs.$inferInsert;
 
+/**
+ * Public student-lookup snapshots, keyed by (org_id, student_id).
+ * Fed by POST /api/public/sync-lookups and read by GET /api/public/sync-lookups.
+ */
+export const publicSyncLookups = pgTable("public_sync_lookups", {
+  id: text("id").primaryKey(),
+  orgId: text("org_id").notNull(),
+  studentId: text("student_id").notNull(),
+  lookupCode: text("lookup_code"),
+  student: jsonb("student"),
+  teacherName: varchar("teacher_name", { length: 255 }),
+  academyName: varchar("academy_name", { length: 255 }),
+  centerName: varchar("center_name", { length: 255 }),
+  branch: varchar("branch", { length: 255 }),
+  attendance: jsonb("attendance"),
+  exams: jsonb("exams"),
+  subscription: jsonb("subscription"),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull(),
+  deletedAt: timestamp("deleted_at", { withTimezone: true, mode: "string" }),
+}, (table) => ({
+  orgIdStudentIdUnique: unique("public_sync_lookups_org_id_student_id_unique").on(table.orgId, table.studentId),
+  orgIdIdx: index("public_sync_lookups_org_id_idx").on(table.orgId),
+  lookupCodeIdx: index("public_sync_lookups_lookup_code_idx").on(table.lookupCode),
+  updatedAtIdx: index("public_sync_lookups_updated_at_idx").on(table.updatedAt),
+}));
+
+export type PublicSyncLookup = typeof publicSyncLookups.$inferSelect;
+export type NewPublicSyncLookup = typeof publicSyncLookups.$inferInsert;
+
 export type OrgUpgradeProposal = typeof orgUpgradeProposals.$inferSelect;
 export type NewOrgUpgradeProposal = typeof orgUpgradeProposals.$inferInsert;
 

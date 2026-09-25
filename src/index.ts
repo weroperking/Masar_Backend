@@ -8,6 +8,7 @@ import attendance from "./routes/attendance";
 import sync from "./routes/sync";
 import publicLookup from "./routes/public-lookup";
 import publicBooking from "./routes/public-booking";
+import publicSyncLookups from "./routes/public-sync-lookups";
 import webhooks from "./routes/webhooks";
 import billing from "./routes/billing";
 import orgs from "./routes/orgs";
@@ -40,6 +41,13 @@ app.use("/public/*", cors({ origin: "*" }));
 app.route("/public", publicLookup);
 app.route("/public/booking", publicBooking);
 app.route("/api", pingDb);
+
+// Public student-card sync endpoint: POST/GET /api/public/sync-lookups.
+// Deliberately NOT behind auth or the subscription gate — the public lookup page
+// at https://app.masar.top/p/s/<lookupCode> has no Clerk session. It accepts a
+// session when one is present (org claim wins) and otherwise requires the
+// student-scoped lookup_code as proof of possession.
+app.route("/api/public", publicSyncLookups);
 
 // Webhooks — no auth, raw Clerk-signed payload
 app.route("/webhooks", webhooks);

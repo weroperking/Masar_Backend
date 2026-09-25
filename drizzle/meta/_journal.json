@@ -92,6 +92,13 @@
       "when": 1790400000000,
       "tag": "0012_lookup_codes",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1790400001000,
+      "tag": "0013_public_sync_lookups",
+      "breakpoints": true
     }
   ]
 }

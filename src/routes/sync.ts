@@ -243,7 +243,7 @@ async function getOrStoreDeviceKey(
     .limit(1);
 
   const now = new Date();
-  const expiresAt = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+  const expiresAt = new Date(now.getTime() + DEVICE_KEY_IDLE_TTL_MS);
 
   if (existing.length > 0) {
     await db
@@ -267,37 +267,111 @@ async function getOrStoreDeviceKey(
   return publicKeyHash;
 }
 
-async function getDekFromHeader(
+/**
+ * Device-key lifetime policy.
+ *
+ * Previously expires_at was written once as created_at + 24h and every push/pull
+ * hard-failed once that instant passed. A device that syncs every day therefore
+ * died at exactly 24h after its handshake, and because the 409 body carried no
+ * machine-readable reason the client could not distinguish "expired" from
+ * "never seen this key", so it never re-handshook and the org's sync channel was
+ * dead permanently (incident 2026-09-25, publicKeyHash b25532eb...09 4).
+ *
+ * Policy now:
+ *  - IDLE TTL (24h), sliding: any use of a known key re-arms the window, so an
+ *    actively-syncing device never expires.
+ *  - MAX AGE (30d), absolute from created_at: a leaked keypair must be rotated
+ *    at least every 30 days even if it is in constant use. Past the cap the key
+ *    is rejected with rehandshake:true.
+ *  - The row must still exist for (org_id, public_key_hash); unknown hashes are
+ *    never auto-created. Org scope is unchanged.
+ */
+const DEVICE_KEY_IDLE_TTL_MS = 24 * 60 * 60 * 1000;
+const DEVICE_KEY_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+
+/** Re-arm the sliding window only once at least half of it has been spent. */
+const DEVICE_KEY_REARM_THRESHOLD_MS = DEVICE_KEY_IDLE_TTL_MS / 2;
+
+type DekResolution =
+  | { status: "ok"; key: CryptoKey; expiresAt: string; rearmed: boolean }
+  | {
+      status:
+        | "missing_header"
+        | "bad_header"
+        | "not_found"
+        | "expired"
+        | "key_error";
+    };
+
+async function resolveDekFromHeader(
   c: Context<AppEnv>,
   db: ReturnType<typeof createDb>,
   orgId: string,
   kekBase64: string
-): Promise<CryptoKey | null> {
+): Promise<DekResolution> {
   const authHeader = c.req.header("X-Sync-Auth");
-  if (!authHeader) return null;
+  if (!authHeader) return { status: "missing_header" };
 
-  let publicKeyHash: string;
+  let publicKeyHash: unknown;
   try {
     const authData = JSON.parse(new TextDecoder().decode(decodeBase64(authHeader)));
     publicKeyHash = authData.publicKeyHash;
   } catch {
-    return null;
+    return { status: "bad_header" };
   }
 
+  if (typeof publicKeyHash !== "string" || publicKeyHash.length === 0) {
+    return { status: "bad_header" };
+  }
+
+  // Look the key up WITHOUT the expires_at predicate so an expired-but-known key
+  // is distinguishable from a key that was never registered.
   const deviceKeys = await db
     .select()
     .from(schema.syncDeviceKeys)
     .where(
       and(
         eq(schema.syncDeviceKeys.orgId, orgId),
-        eq(schema.syncDeviceKeys.publicKeyHash, publicKeyHash),
-        gte(schema.syncDeviceKeys.expiresAt, new Date().toISOString())
+        eq(schema.syncDeviceKeys.publicKeyHash, publicKeyHash)
       )
     )
     .limit(1);
 
-  if (deviceKeys.length === 0) return null;
-  if (new Date(deviceKeys[0].expiresAt) < new Date()) return null;
+  if (deviceKeys.length === 0) return { status: "not_found" };
+
+  const deviceKey = deviceKeys[0];
+  const now = Date.now();
+
+  if (now - new Date(deviceKey.createdAt).getTime() > DEVICE_KEY_MAX_AGE_MS) {
+    console.warn("[sync] device key past absolute max age, re-handshake required", {
+      orgId,
+      publicKeyHash,
+      createdAt: deviceKey.createdAt,
+    });
+    return { status: "expired" };
+  }
+
+  // Slide the idle window forward for this (known, in-policy) key.
+  let expiresAtMs = new Date(deviceKey.expiresAt).getTime();
+  let rearmed = false;
+  const nextExpiryMs = now + DEVICE_KEY_IDLE_TTL_MS;
+  if (nextExpiryMs - expiresAtMs >= DEVICE_KEY_REARM_THRESHOLD_MS) {
+    try {
+      await db
+        .update(schema.syncDeviceKeys)
+        .set({ expiresAt: new Date(nextExpiryMs).toISOString() })
+        .where(eq(schema.syncDeviceKeys.id, deviceKey.id));
+      expiresAtMs = nextExpiryMs;
+      rearmed = true;
+    } catch (err) {
+      // Never fail a sync because the housekeeping write failed.
+      console.error("[sync] device key re-arm failed", {
+        orgId,
+        publicKeyHash,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
 
   const dekBuffer = await getOrCreateOrgDek(db, orgId, kekBase64);
   try {
@@ -308,10 +382,38 @@ async function getDekFromHeader(
       false,
       ["encrypt", "decrypt"]
     );
-    return key;
+    return {
+      status: "ok",
+      key,
+      expiresAt: new Date(expiresAtMs).toISOString(),
+      rearmed,
+    };
   } catch {
-    return null;
+    return { status: "key_error" };
   }
+}
+
+const DEK_ERROR_CODES: Record<string, string> = {
+  missing_header: "missing_sync_auth",
+  bad_header: "invalid_sync_auth",
+  not_found: "device_key_not_found",
+  expired: "device_key_expired",
+  key_error: "dek_unavailable",
+};
+
+/**
+ * 409 body. `error` is kept byte-identical to the previous response so existing
+ * clients keep matching on it; `code`/`reason`/`rehandshake` are additive and
+ * give the client the signal it needs to recover by re-handshaking.
+ */
+function dekErrorBody(status: string) {
+  return {
+    error: "No valid DEK found for encrypted payload",
+    code: DEK_ERROR_CODES[status] ?? "dek_unavailable",
+    reason: status,
+    rehandshake: true,
+    hint: "POST /api/sync/handshake with a fresh devicePublicKey, then retry using the returned publicKeyHash",
+  };
 }
 
 async function encryptPayload(dek: CryptoKey, payload: any): Promise<string> {
@@ -447,10 +549,19 @@ app.post("/push", async (c) => {
     return c.json({ error: "Encryption required. Missing X-Sync-Encrypted header." }, 400);
   }
 
-  const dek = isEncrypted ? await getDekFromHeader(c, db, orgId, kekBase64) : null;
+  const resolution = isEncrypted
+    ? await resolveDekFromHeader(c, db, orgId, kekBase64)
+    : ({ status: "plaintext" } as const);
+  const dek = resolution.status === "ok" ? resolution.key : null;
 
   if (isEncrypted && !dek) {
-    return c.json({ error: "No valid DEK found for encrypted payload" }, 409);
+    return c.json(dekErrorBody(resolution.status), 409);
+  }
+  if (resolution.status === "ok") {
+    c.header("X-Sync-Device-Key-Expires-At", resolution.expiresAt);
+    if (resolution.rearmed) {
+      c.header("X-Sync-Device-Key-Rearmed", "true");
+    }
   }
 
   const results: SyncPushResult[] = [];
@@ -790,10 +901,19 @@ app.get("/pull", async (c) => {
     return c.json({ error: "Encryption required. Missing X-Sync-Encrypted header." }, 400);
   }
 
-  const dek = isEncrypted ? await getDekFromHeader(c, db, orgId, kekBase64) : null;
+  const resolution = isEncrypted
+    ? await resolveDekFromHeader(c, db, orgId, kekBase64)
+    : ({ status: "plaintext" } as const);
+  const dek = resolution.status === "ok" ? resolution.key : null;
 
   if (isEncrypted && !dek) {
-    return c.json({ error: "No valid DEK found for encrypted payload" }, 409);
+    return c.json(dekErrorBody(resolution.status), 409);
+  }
+  if (resolution.status === "ok") {
+    c.header("X-Sync-Device-Key-Expires-At", resolution.expiresAt);
+    if (resolution.rearmed) {
+      c.header("X-Sync-Device-Key-Rearmed", "true");
+    }
   }
 
   const sinceDate = new Date(since);

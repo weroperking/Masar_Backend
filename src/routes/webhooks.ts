@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { createDb, schema } from "../db";
 import { verifyWebhook } from "@clerk/backend/webhooks";
+import { generateLookupPrefix } from "../lib/lookup";
 
 import type { AppEnv } from "../types";
 
@@ -34,6 +35,7 @@ app.post("/clerk", async (c) => {
 			const country = cf?.country || null;
 			const city = cf?.city || null;
 			const bookingCode = generateBookingCode();
+			const lookupPrefix = generateLookupPrefix();
 
 			const db = createDb(c.env.DATABASE_URL as string);
 
@@ -50,6 +52,7 @@ app.post("/clerk", async (c) => {
 					country,
 					city,
 					bookingCode,
+					lookupPrefix,
 					createdAt: now,
 					updatedAt: now,
 				})

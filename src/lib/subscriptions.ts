@@ -2,6 +2,7 @@ import { createDb, schema } from "../db";
 import type { Subscription } from "../db/schema";
 import { PLAN_LIMITS, type PlanKey } from "../config/plans";
 import { eq } from "drizzle-orm";
+import { generateLookupPrefix } from "./lookup";
 
 export interface EffectiveSubscription extends Subscription {
 	isEffectivelyExpired: boolean;
@@ -43,6 +44,7 @@ export async function getSubscription(
 				status: "trialing",
 				trialStartedAt,
 				trialEndsAt,
+				lookupPrefix: generateLookupPrefix(),
 				createdAt: now,
 				updatedAt: now,
 			})

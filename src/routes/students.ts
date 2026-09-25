@@ -5,6 +5,12 @@ import type { Student, NewStudent } from "../db/schema";
 import { PLAN_LIMITS } from "../config/plans";
 import type { PlanKey } from "../config/plans";
 import type { EffectiveSubscription } from "../lib/subscriptions";
+import {
+  encodeLookupCode,
+  getOrgLookupPrefix,
+  issueStudentLookupCode,
+  PARENT_FOLLOW_URL_PREFIX,
+} from "../lib/lookup";
 
 import type { AppEnv } from "../types";
 
@@ -64,9 +70,12 @@ app.post("/", async (c) => {
     updatedAt: new Date().toISOString(),
   };
 
+  const lookupPrefix = await getOrgLookupPrefix(db, orgId);
+  student.lookupCode = encodeLookupCode(lookupPrefix, student.id);
+
   const result = await db.insert(schema.students).values(student).returning();
   const t2 = Date.now();
-  console.log(`[perf] student_create db_connect=${t1-t0}ms insert=${t2-t1}ms route=${c.req.url}`);
+  console.log(`[perf] student_create db_connect=${t1 - t0}ms insert=${t2 - t1}ms route=${c.req.url}`);
   return c.json({ student: result[0] }, 201);
 });
 
@@ -130,7 +139,10 @@ app.post("/:id/lookup-token", async (c) => {
   const id = c.req.param("id");
 
   const existing = await db
-    .select()
+    .select({
+      id: schema.students.id,
+      lookupCode: schema.students.lookupCode,
+    })
     .from(schema.students)
     .where(and(eq(schema.students.id, id), eq(schema.students.orgId, orgId)))
     .limit(1);
@@ -139,18 +151,12 @@ app.post("/:id/lookup-token", async (c) => {
     return c.json({ error: "Student not found" }, 404);
   }
 
-  let token = existing[0].publicLookupToken;
-  const now = new Date().toISOString();
-
-  if (!token) {
-    token = crypto.randomUUID();
-    await db
-      .update(schema.students)
-      .set({ publicLookupToken: token, updatedAt: now })
-      .where(and(eq(schema.students.id, id), eq(schema.students.orgId, orgId)));
+  let lookupCode = existing[0].lookupCode;
+  if (!lookupCode) {
+    lookupCode = await issueStudentLookupCode(db, orgId, id);
   }
 
-  return c.json({ url: `https://app.masar.top/p/s/${token}` });
+  return c.json({ url: `${PARENT_FOLLOW_URL_PREFIX}/${lookupCode}` });
 });
 
 export default app;

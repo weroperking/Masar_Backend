@@ -19,12 +19,12 @@ export const students = pgTable("students", {
   address: text("address"),
   notes: text("notes"),
   status: varchar("status", { length: 50 }).default("active"),
-  publicLookupToken: text("public_lookup_token"),
+  lookupCode: text("lookup_code").notNull().unique("students_lookup_code_unique"),
   discountType: varchar("discount_type", { length: 50 }).notNull().default("none"),
   discountValue: integer("discount_value").notNull().default(0),
 }, (table) => ({
   orgIdIdx: index("students_org_id_idx").on(table.orgId),
-  publicLookupTokenIdx: index("students_public_lookup_token_idx").on(table.publicLookupToken),
+  lookupCodeIdx: index("students_lookup_code_idx").on(table.lookupCode),
 }));
 
 export const courses = pgTable("courses", {
@@ -494,11 +494,13 @@ export const subscriptions = pgTable("subscriptions", {
   country: text("country"),
   city: text("city"),
   bookingCode: text("booking_code").unique(),
+  lookupPrefix: text("lookup_prefix").notNull().unique("subscriptions_lookup_prefix_unique"),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull(),
 }, (table) => ({
   orgIdIdx: index("subscriptions_org_id_idx").on(table.orgId),
   bookingCodeIdx: index("subscriptions_booking_code_idx").on(table.bookingCode),
+  lookupPrefixIdx: index("subscriptions_lookup_prefix_idx").on(table.lookupPrefix),
 }));
 
 export type Subscription = typeof subscriptions.$inferSelect;
